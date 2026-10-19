@@ -12,6 +12,7 @@ class SpecDataConverterApp:
         
         # 變數
         self.folder_path = tk.StringVar()
+        self.processed_data_dict = {}
         
         # 建立 UI 介面
         self.create_widgets()
@@ -95,20 +96,18 @@ class SpecDataConverterApp:
             os.makedirs(results_folder)
             self.log(f"已建立存放資料夾: {results_folder}")
             
-        self.processed_data_dict = {} # 暫存轉換後的資料框
+        self.processed_data_dict = {} 
         
         for file_path in file_list:
             filename = os.path.basename(file_path)
             self.log(f"正在處理檔案: {filename}")
             try:
-                # 取得新工作表名稱 (例如檔名以 "_" 切割前兩段)
                 sp1 = filename.split("_")
                 if len(sp1) >= 2:
                     newname = f"{sp1[0]}_{sp1[1]}"
                 else:
                     newname = os.path.splitext(filename)[0]
                 
-                # 讀取 Excel
                 xls = pd.ExcelFile(file_path)
                 if "Model team Fitting data" not in xls.sheet_names:
                     self.log(f"  -> 錯誤: 檔案 {filename} 中找不到 'Model team Fitting data' 工作表")
@@ -116,10 +115,9 @@ class SpecDataConverterApp:
                     
                 ws1_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
                 
-                # 對應 trans_spec_data_all 邏輯
-                W = ws1_fitting.iloc[8, 1]  Row 9 Index 8
-                L = ws1_fitting.iloc[9, 1]  Row 10 Index 9
-                T = ws1_fitting.iloc[7, 1]  Row 8 Index 7
+                W = ws1_fitting.iloc[8, 1]  # Row 9 Index 8
+                L = ws1_fitting.iloc[9, 1]  # Row 10 Index 9
+                T = ws1_fitting.iloc[7, 1]  # Row 8 Index 7
                 
                 cell_3_2 = ws1_fitting.iloc[2, 1] # Row 3 Index 2
                 mos_type = "NMOS" if pd.notna(cell_3_2) and float(cell_3_2) > 0 else "PMOS"
@@ -127,12 +125,10 @@ class SpecDataConverterApp:
                 a_str = f"Instance{{W={W},L={L},T={T}}}"
                 b_str = f"DataType{{{mos_type}}}"
                 
-                # 計算 G1 最後一列 (Col G 即 index 6)
                 col_g = ws1_fitting.iloc[11:, 6].dropna()
                 g1_last_row = col_g.index[-1] + 1
                 num = g1_last_row - 10
                 
-                # 建立標題與內容
                 target_rows = [
                     "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd",
                     "// All rights reserved.",
@@ -153,7 +149,6 @@ class SpecDataConverterApp:
                 
                 df_target = pd.DataFrame({0: target_rows})
                 
-                # 抓取 5 個區段資料 (Col G, J, M, P, S 依次對應 index 6, 9, 12, 15, 18)
                 extra_data = []
                 for j in range(5):
                     col_idx = 6 + j * 3
@@ -163,7 +158,6 @@ class SpecDataConverterApp:
                 combined_extra = pd.concat(extra_data, ignore_index=True)
                 df_target = pd.concat([df_target, combined_extra.to_frame(name=0)], ignore_index=True)
                 
-                # 儲存至記憶體字典中供後續步驟使用
                 self.processed_data_dict[newname] = df_target
                 self.log(f"  -> 成功處理並暫存: {newname}")
                 
@@ -175,7 +169,7 @@ class SpecDataConverterApp:
 
     def run_save_wi_vtgm(self):
         """對應 spec_data_step_2_save_and_remove_space + step_3_save_dat"""
-        if not hasattr(self, 'processed_data_dict') or not self.processed_data_dict:
+        if not self.processed_data_dict:
             self.log("錯誤: 沒有可儲存的資料，請先執行 'spec Data'！")
             return
             
@@ -184,11 +178,7 @@ class SpecDataConverterApp:
         
         self.log("開始清理空白列並儲存 .dat 檔案...")
         for name, df in self.processed_data_dict.items():
-            # 移除空白列邏輯 (由後往前檢查)
-            # 轉換 DataFrame 為字串陣列以便清理
             df_cleaned = df.dropna(how='all').reset_index(drop=True)
-            
-            # 儲存成 .dat 格式 (Excel text printer 格式即為 tab/space 分隔文字檔)
             out_path = os.path.join(results_folder, f"{name}.dat")
             df_cleaned.to_csv(out_path, index=False, header=False, sep='\t', quoting=0)
             self.log(f"已儲存: {out_path}")
@@ -197,28 +187,24 @@ class SpecDataConverterApp:
 
     def run_save_wo_vtgm(self):
         """對應 spec_data_step2_remove_vtgm_option"""
-        if not hasattr(self, 'processed_data_dict') or not self.processed_data_dict:
+        if not self.processed_data_dict:
             self.log("錯誤: 沒有可處理的資料，請先執行 'spec Data'！")
             return
             
         self.log("開始移除 vtgm 選項相關資料...")
         folder = self.folder_path.get()
-        results_folder = os.path.join(folder, "after_trans")
         
         for name, df in self.processed_data_dict.items():
-            # 搜尋 {vtgm_Time} 關鍵字
             match_idx = df[df[0].astype(str).str.contains(r"\{vtgm_Time\}", case=False, na=False)].index
             
             if not match_idx.empty:
                 row_idx = match_idx[0]
-                # 刪除從該行到底部的所有資料 (對應 VBA Selection.End(xlDown))
                 df_trimmed = df.iloc[:row_idx].reset_index(drop=True)
                 self.processed_data_dict[name] = df_trimmed
                 self.log(f"[{name}] 成功移除 {row_idx} 行之後包含 vtgm 的資料")
             else:
                 self.log(f"[{name}] 未找到 {{vtgm_Time}} 關鍵字")
                 
-        # 執行後續的清除空白與存檔
         self.run_save_wi_vtgm()
 
 if __name__ == "__main__":
