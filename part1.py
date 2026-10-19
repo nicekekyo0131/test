@@ -1,5 +1,6 @@
 import os
 import glob
+import re
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, messagebox
 import pandas as pd
@@ -7,13 +8,13 @@ import pandas as pd
 class SpecDataApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Spec Data 轉換工具")
+        self.root.title("Spec Data 轉換工具 (文字檔剖析修正版)")
         self.root.geometry("700x550")
 
         # 變數設定
         self.folder_path = tk.StringVar()
+        self.processed_data = {} # 記憶體中的工作表資料 (儲存 DataFrame)
 
-        # 建立 UI 介面
         self.create_widgets()
 
     def create_widgets(self):
@@ -52,9 +53,6 @@ class SpecDataApp:
 
         self.log_text = scrolledtext.ScrolledText(frame_log, wrap=tk.WORD, height=20)
         self.log_text.pack(expand=True, fill=tk.BOTH, pady=(5, 0))
-        
-        # 記憶體中的暫存資料結構 (用來對應原本活頁簿中多個工作表的資料)
-        self.processed_data = {} 
 
     def log(self, message):
         """寫入 Log 訊息到介面文字框"""
@@ -69,7 +67,6 @@ class SpecDataApp:
             self.folder_path.set(dir_)
             self.log(f"已選擇資料夾: {dir_}")
             
-            # 列出資料夾有哪些檔案 (符合需求 2)
             try:
                 files = os.listdir(dir_)
                 self.log(f"--- 該資料夾中的檔案清單 ({len(files)} 個項目) ---")
@@ -93,7 +90,7 @@ class SpecDataApp:
         return after_trans_dir
 
     def run_step_1(self):
-        """對應 spec_data_step_1"""
+        """對應 spec_data_step_1 (以文字檔方式解析，對應 OpenText 與 ConsecutiveDelimiter)"""
         base_dir = self.folder_path.get()
         if not base_dir:
             messagebox.showerror("錯誤", "請先選擇資料夾位置！")
@@ -102,12 +99,14 @@ class SpecDataApp:
         self.processed_data.clear()
         self.log("=== 開始執行 spec Data (Step 1) ===")
 
-        # 搜尋指定資料夾下的 .xls 或 .xlsx 檔案
-        search_pattern = os.path.join(base_dir, "*.xls*")
-        files = glob.glob(search_pattern)
+        # 搜尋指定資料夾下的檔案
+        search_pattern = os.path.join(base_dir, "*")
+        all_paths = glob.glob(search_pattern)
+        # 過濾掉資料夾，只抓檔案
+        files = [p for p in all_paths if os.path.isfile(p) and not p.endswith(".dat")]
 
         if not files:
-            messagebox.showwarning("提示", "指定資料夾中找不到任何 Excel 檔案 (.xls / .xlsx)！")
+            messagebox.showwarning("提示", "指定資料夾中找不到任何檔案！")
             self.log("錯誤: 找不到原始資料檔案。")
             return
 
@@ -115,12 +114,29 @@ class SpecDataApp:
 
         for file_path in files:
             filename = os.path.basename(file_path)
-            self.log(f"正在讀取檔案: {filename}")
-            try:
-                # 讀取 Excel 中的 "Model team Fitting data" 工作表
-                # 這裡使用 pandas 讀取
-                df_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
+            # 略過 after_trans 資料夾本身若被掃到
+            if filename == "after_trans":
+                continue
                 
+            self.log(f"正在以文字模式解析檔案: {filename}")
+            try:
+                # 模擬 VBA 的 Workbooks.OpenText 與 ConsecutiveDelimiter:=True
+                # 逐行讀取純文字檔案，並以連續空白或 Tab 切割欄位
+                rows = []
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        # 移除結尾換行並依空白/Tab切割 (ConsecutiveDelimiter 效果)
+                        cols = re.split(r'\s+', line.strip())
+                        if cols and cols[0] != '':
+                            rows.append(cols)
+
+                if not rows:
+                    self.log(f"  -> 警告: 檔案 {filename} 內容為空或無法解析")
+                    continue
+
+                # 轉換為 DataFrame 格式
+                df_fitting = pd.DataFrame(rows)
+
                 # 檔名分割命名規則： sp1(0) & "_" & sp1(1)
                 name_parts = filename.split("_")
                 if len(name_parts) >= 2:
@@ -128,31 +144,35 @@ class SpecDataApp:
                 else:
                     newname = os.path.splitext(filename)[0]
 
-                # 暫存進記憶體字典中 (模擬多個工作表)
+                # 暫存進記憶體字典中
                 self.processed_data[newname] = df_fitting
-                self.log(f"  -> 成功萃取並建立工作表資料: {newname}")
+                self.log(f"  -> 成功解析並建立工作表資料: {newname} (共 {len(rows)} 行)")
 
             except Exception as e:
-                self.log(f"  -> 讀取檔案 {filename} 失敗: {e}")
+                self.log(f"  -> 解析檔案 {filename} 失敗: {e}")
+
+        if not self.processed_data:
+            messagebox.showwarning("提示", "沒有成功解析任何檔案！")
+            return
 
         self.log("Step 1 執行完成！")
-        messagebox.println = messagebox.showinfo("完成", "Step 1 執行完畢！\n不需要 vtgm 請執行 SAVE Data(wo vtgm)\n需要 vtgm 請執行 SAVE Data(wi vtgm)")
+        messagebox.showinfo("完成", "Step 1 執行完畢！\n不需要 vtgm 請執行 SAVE Data(wo vtgm)\n需要 vtgm 請執行 SAVE Data(wi vtgm)")
 
     def _save_dat_files(self):
-        """對應 step_3_save_dat"""
+        """對應 step_3_save_dat (以類似 xlTextPrinter 格式輸出)"""
         after_dir = self.get_target_dir()
         if not after_dir:
             return
 
         if not self.processed_data:
-            messagebox.showwarning("提示", "目前沒有處理好的資料可供儲存，請先執行 'spec Data'！")
+            messagebox.showwarning("提示", "目前沒有處理好的資料可供儲存！")
             return
 
         self.log("=== 開始儲存 .dat 檔案 ===")
         for sheet_name, df in self.processed_data.items():
             out_path = os.path.join(after_dir, f"{sheet_name}.dat")
             try:
-                # 轉成定位字元分隔 (TextPrinter 格式在 Python 中可用 sep='\t' 模擬)
+                # 使用 tab 分隔輸出，不包含表頭與索引，模擬 xlTextPrinter 輸出
                 df.to_csv(out_path, sep='\t', index=False, header=False, na_rep='')
                 self.log(f"已儲存: {out_path}")
             except Exception as e:
@@ -162,25 +182,19 @@ class SpecDataApp:
         messagebox.showinfo("成功", f"檔案已全數儲存至:\n{after_dir}")
 
     def run_step_2_wi(self):
-        """對應 spec_data_step_2_save_and_remove_space 與 step_3_save_dat"""
+        """對應 spec_data_step_2_save_and_remove_space"""
         if not self.processed_data:
             messagebox.showwarning("提示", "無資料可處理，請先執行 'spec Data'！")
             return
 
         self.log("=== 執行 SAVE Data (wi vtgm): 清理空白列並存檔 ===")
         for sheet_name, df in self.processed_data.items():
-            # 移除第一欄 (Col 1) 為空值的列
-            # 原 VBA 是從底往上掃描若 Cells(i, 1) == "" 則刪除整列
             if not df.empty:
-                # 保留第一欄有填寫資料的列 (dropna 或過濾)
-                df_cleaned = df.dropna(subset=[df.columns[0]])
-                # 也可以選擇清除全空白的列，此處嚴格對應原本 VBA 邏輯：檢查第 1 欄是否為空
-                # 由於 pandas 處理方式較快，過濾掉第 1 欄是 NaN 或空字串的列
+                # 嚴格對應原 VBA: 檢查第 1 欄若為空值則刪除該列
                 df_cleaned = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].astype(str).str.strip() != "")]
                 self.processed_data[sheet_name] = df_cleaned
                 self.log(f"工作表 [{sheet_name}] 已清除空白列。")
 
-        # 執行儲存
         self._save_dat_files()
 
     def run_step_2_wo(self):
@@ -198,8 +212,7 @@ class SpecDataApp:
             for r_idx, row in df.iterrows():
                 for c_idx, val in enumerate(row):
                     if val and search_vtgm in str(val):
-                        # 找到後，刪除該列以及之後的所有列 (相當於 VBA 中的 Row 到 G3)
-                        # 在 pandas 中，我們直接切片保留該列以前的資料
+                        # 找到後，保留該列以前的資料（刪除該列及之後所有列）
                         df = df.iloc[:r_idx]
                         found = True
                         break
@@ -211,13 +224,12 @@ class SpecDataApp:
             else:
                 self.log(f"工作表 [{sheet_name}] 未找到關鍵字 {{vtgm_Time}}。")
 
-            # 接著進行清除空白列動作 (對應原 VBA 會接著呼叫 step_2_save_and_remove_space)
+            # 清除空白列
             if not df.empty:
                 df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0].astype(str).str.strip() != "")]
 
             self.processed_data[sheet_name] = df
 
-        # 執行儲存
         self._save_dat_files()
 
 if __name__ == "__main__":
