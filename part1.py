@@ -1,6 +1,5 @@
 import os
 import glob
-import csv
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
@@ -130,11 +129,10 @@ class SpecDataConverterApp:
                 g1_last_row = col_g.index[-1] + 1
                 num = g1_last_row - 10
                 
-                # 嚴格對應標題列（確保第 3 行為完全空白）
                 target_rows = [
                     "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd",
                     "// All rights reserved.",
-                    "",  # 第 3 行強制為空行
+                    "",
                     "ObjInfo{}",
                     "ProbeInfo{}",
                     "Version{4.1}",
@@ -180,21 +178,9 @@ class SpecDataConverterApp:
         
         self.log("開始清理空白列並儲存 .dat 檔案...")
         for name, df in self.processed_data_dict.items():
-            df_cleaned = df.copy()
-            df_cleaned[0] = df_cleaned[0].fillna("")
-            
+            df_cleaned = df.dropna(how='all').reset_index(drop=True)
             out_path = os.path.join(results_folder, f"{name}.dat")
-            
-            # 使用 QUOTE_NONE 確保輸出文字檔不會被加上雙引號 ""
-            df_cleaned.to_csv(
-                out_path, 
-                index=False, 
-                header=False, 
-                sep='\t', 
-                quoting=csv.QUOTE_NONE, 
-                escapechar='\\', 
-                na_rep=''
-            )
+            df_cleaned.to_csv(out_path, index=False, header=False, sep='\t', quoting=0)
             self.log(f"已儲存: {out_path}")
             
         self.log("全部檔案儲存完成！")
