@@ -132,7 +132,7 @@ class SpecDataConverterApp:
                 target_rows = [
                     "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd",
                     "// All rights reserved.",
-                    "",
+                    "",  # 這裡的空字串代表第三行為空白
                     "ObjInfo{}",
                     "ProbeInfo{}",
                     "Version{4.1}",
@@ -180,7 +180,15 @@ class SpecDataConverterApp:
         for name, df in self.processed_data_dict.items():
             df_cleaned = df.dropna(how='all').reset_index(drop=True)
             out_path = os.path.join(results_folder, f"{name}.dat")
-            df_cleaned.to_csv(out_path, index=False, header=False, sep='\t', quoting=0)
+            
+            # 改用純文字逐行寫入，確保空字串不會變成 ""，而是真正的空白行
+            with open(out_path, 'w', encoding='utf-8') as f:
+                for val in df_cleaned[0]:
+                    if pd.isna(val) or str(val).strip() == "":
+                        f.write("\n")
+                    else:
+                        f.write(f"{val}\n")
+                        
             self.log(f"已儲存: {out_path}")
             
         self.log("全部檔案儲存完成！")
