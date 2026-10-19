@@ -129,10 +129,11 @@ class SpecDataConverterApp:
                 g1_last_row = col_g.index[-1] + 1
                 num = g1_last_row - 10
                 
+                # 嚴格對應 VBA 的前 15 行標題（確保第 3 行 [index 2] 為嚴格空白）
                 target_rows = [
                     "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd",
                     "// All rights reserved.",
-                    "",
+                    "",  # 第 3 行強制為空行
                     "ObjInfo{}",
                     "ProbeInfo{}",
                     "Version{4.1}",
@@ -178,9 +179,15 @@ class SpecDataConverterApp:
         
         self.log("開始清理空白列並儲存 .dat 檔案...")
         for name, df in self.processed_data_dict.items():
-            df_cleaned = df.dropna(how='all').reset_index(drop=True)
+            # 針對輸出的 DataFrame 進行空白列清理，但保留第三行（index 2）的空行結構
+            # 這裡我們只清除完全屬於尾端或多餘的 NaT / NaN 列
+            df_cleaned = df.copy()
+            # 確保 NaN / None 轉為空白字串輸出，避免多餘文字卡進去
+            df_cleaned[0] = df_cleaned[0].fillna("")
+            
             out_path = os.path.join(results_folder, f"{name}.dat")
-            df_cleaned.to_csv(out_path, index=False, header=False, sep='\t', quoting=0)
+            # 寫入檔案，na_rep='' 確保空值轉為真正的空白行
+            df_cleaned.to_csv(out_path, index=False, header=False, sep='\t', quoting=0, na_rep='')
             self.log(f"已儲存: {out_path}")
             
         self.log("全部檔案儲存完成！")
