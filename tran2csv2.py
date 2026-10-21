@@ -1,446 +1,381 @@
 import os
 import glob
+import re
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk, filedialog, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext
 
-class SpecDataConverterApp:
+class IVTransApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("IC 數據自動轉檔整合工具 (Part 1, 2, 3)")
-        self.root.geometry("820x720")
-        
-        # 變數
-        self.folder_path = tk.StringVar()
-        self.processed_data_dict = {}
-        
-        # 建立 Grid 網格狀 UI 介面
+        self.root.title("HCI IV Data 轉檔工具")
+        self.root.geometry("800x650")
+
+        # 儲存轉換後的資料結構（格式：{檔名: {工作表名: 資料內容}}）
+        self.trans_results = {}
+
         self.create_widgets()
-        
+
     def create_widgets(self):
-        # 讓主視窗的欄位可以隨著視窗大小延展
-        self.root.columnconfigure(0, weight=1)
-        
-        # ==================== 1. 資料夾設定區 (Row 0) ====================
-        frame_top = tk.LabelFrame(self.root, text=" 資料夾設定 ", padx=10, pady=10)
-        frame_top.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
-        frame_top.columnconfigure(1, weight=1)
-        
-        lbl_path = tk.Label(frame_top, text="指定資料夾:")
-        lbl_path.grid(row=0, column=0, sticky="w", padx=5)
-        
-        entry_path = tk.Entry(frame_top, textvariable=self.folder_path, width=50)
-        entry_path.grid(row=0, column=1, sticky="ew", padx=5)
-        
-        btn_browse = tk.Button(frame_top, text="瀏覽...", command=self.browse_folder, width=10)
-        btn_browse.grid(row=0, column=2, padx=5)
-        
-        # ==================== 2. 功能按鈕操作區 (Row 1 ~ 3) ====================
-        # Part 1: Spec Data
-        frame_part1 = tk.LabelFrame(self.root, text=" Part 1: Spec Data 操作 ", padx=10, pady=10)
-        frame_part1.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        frame_part1.columnconfigure((0, 1, 2), weight=1)
-        
-        btn_step1 = tk.Button(frame_part1, text="spec Data", bg="#e1f5fe", command=self.run_spec_data)
-        btn_step1.grid(row=0, column=0, sticky="ew", padx=5, ipady=4)
-        
-        btn_step2_wi = tk.Button(frame_part1, text="SAVE Data (wi vtgm)", bg="#e8f5e9", command=self.run_save_wi_vtgm)
-        btn_step2_wi.grid(row=0, column=1, sticky="ew", padx=5, ipady=4)
-        
-        btn_step2_wo = tk.Button(frame_part1, text="SAVE Data (wo vtgm)", bg="#fff3e0", command=self.run_save_wo_vtgm)
-        btn_step2_wo.grid(row=0, column=2, sticky="ew", padx=5, ipady=4)
-        
-        # Part 2: HCI IV Data
-        frame_part2 = tk.LabelFrame(self.root, text=" Part 2: HCI IV Data 操作 ", padx=10, pady=10)
-        frame_part2.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
-        frame_part2.columnconfigure((0, 1), weight=1)
-        
-        btn_hci_trans = tk.Button(frame_part2, text="HCI IV Data", bg="#e1f5fe", command=self.run_hci_iv_trans)
-        btn_hci_trans.grid(row=0, column=0, sticky="ew", padx=5, ipady=4)
-        
-        btn_hci_save = tk.Button(frame_part2, text="SAVE IV Data", bg="#e8f5e9", command=self.run_save_iv_dat)
-        btn_hci_save.grid(row=0, column=1, sticky="ew", padx=5, ipady=4)
+        # 1. 路徑選取區塊
+        path_frame = tk.LabelFrame(self.root, text=" 資料夾設定 ", font=("Arial", 12, "bold"))
+        path_frame.pack(fill="x", padx=15, pady=10)
 
-        # Part 3: BTI IV Data
-        frame_part3 = tk.LabelFrame(self.root, text=" Part 3: BTI IV Data 操作 ", padx=10, pady=10)
-        frame_part3.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
-        frame_part3.columnconfigure((0, 1), weight=1)
-        
-        btn_bti_trans = tk.Button(frame_part3, text="BTI IV Data", bg="#e1f5fe", command=self.run_bti_iv_trans)
-        btn_bti_trans.grid(row=0, column=0, sticky="ew", padx=5, ipady=4)
-        
-        btn_bti_save = tk.Button(frame_part3, text="SAVE IV Data", bg="#e8f5e9", command=self.run_save_iv_dat)
-        btn_bti_save.grid(row=0, column=1, sticky="ew", padx=5, ipady=4)
+        self.path_entry = tk.Entry(path_frame, font=("Arial", 11))
+        self.path_entry.pack(side="left", fill="x", expand=True, padx=10, pady=10)
 
-        # ==================== 3. Log 訊息顯示區 (Row 4) ====================
-        frame_log = tk.LabelFrame(self.root, text=" 執行紀錄 (Log) ", padx=10, pady=10)
-        frame_log.grid(row=4, column=0, sticky="nsew", padx=10, pady=5)
-        frame_log.rowconfigure(0, weight=1)
-        frame_log.columnconfigure(0, weight=1)
-        self.root.rowconfigure(4, weight=1)
-        
-        self.log_text = scrolledtext.ScrolledText(frame_log, wrap=tk.WORD, bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 10))
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-        
+        browse_btn = tk.Button(path_frame, text="瀏覽資料夾", font=("Arial", 10), command=self.browse_folder)
+        browse_btn.pack(side="right", padx=10, pady=10)
+
+        # 2. 功能按鈕區塊
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(fill="x", padx=15, pady=5)
+
+        self.btn_hci = tk.Button(btn_frame, text="HCI IV DATA", font=("Arial", 11, "bold"), 
+                                 bg="#4CAF50", fg="white", width=20, height=2, command=self.run_hci_trans)
+        self.btn_hci.pack(side="left", padx=10)
+
+        self.btn_save = tk.Button(btn_frame, text="SAVE IV DATA", font=("Arial", 11, "bold"), 
+                                  bg="#2196F3", fg="white", width=20, height=2, command=self.run_save_dat)
+        self.btn_save.pack(side="right", padx=10)
+
+        # 3. Log 記錄視窗區塊
+        log_frame = tk.LabelFrame(self.root, text=" 操作記錄 (Log) ", font=("Arial", 12, "bold"))
+        log_frame.pack(fill="both", expand=True, padx=15, pady=10)
+
+        self.log_text = scrolledtext.ScrolledText(log_frame, font=("Consolas", 10), bg="#1e1e1e", fg="#00ff00")
+        self.log_text.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.log("系統就緒，請選擇要讀取的資料夾。\n")
+
     def log(self, message):
         """寫入 Log 訊息到介面"""
         self.log_text.insert(tk.END, message + "\n")
         self.log_text.see(tk.END)
-        
+
     def browse_folder(self):
-        """選擇資料夾並掃描檔案"""
-        dir_selected = filedialog.askdirectory()
-        if dir_selected:
-            self.folder_path.set(dir_selected)
-            self.log(f"已選擇資料夾: {dir_selected}")
-            self.scan_folder_files(dir_selected)
+        """選擇資料夾按鈕事件"""
+        folder_selected = filedialog.askdirectory()
+        if folder_selected:
+            self.path_entry.delete(0, tk.END)
+            self.path_entry.insert(0, folder_selected)
+            self.log(f"已選擇資料夾: {folder_selected}")
             
-    def scan_folder_files(self, path):
-        """掃描資料夾內的檔案並列在 Log 中"""
-        try:
-            files = os.listdir(path)
-            self.log("-" * 40)
-            self.log(f"資料夾內檔案列表 ({len(files)} 個項目):")
+            # 列出資料夾內有哪些檔案 (需求 2)
+            files = os.listdir(folder_selected)
+            self.log(f"--- 該資料夾內容清單 ({len(files)} 個項目) ---")
             for f in files:
-                self.log(f"  - {f}")
-            self.log("-" * 40)
+                self.log(f"  • {f}")
+            self.log("-" * 50)
+
+    def run_hci_trans(self):
+        """執行 HCI IV DATA 轉檔邏輯"""
+        target_dir = self.path_entry.get().strip()
+        if not target_dir or not os.path.isdir(target_dir):
+            messagebox.showerror("錯誤", "請先選擇有效的資料夾路徑！")
+            return
+
+        self.log("=== 開始執行 HCI IV DATA 轉檔 ===")
+        self.trans_results.clear()
+
+        # 搜尋指定資料夾底下的所有 excel 檔案 (.xls, .xlsx, .xlsm)
+        search_pattern = os.path.join(target_dir, "*.[xlX][lsL]*")
+        raw_files = [f for f in glob.glob(search_pattern) if not os.path.basename(f).startswith("~$")]
+
+        if not raw_files:
+            self.log("警告: 指定資料夾中找不到任何 Excel 檔案！")
+            messagebox.showwarning("提示", "指定資料夾中找不到 Excel 檔案！")
+            return
+
+        self.log(f"找到 {len(raw_files)} 個原始 Excel 檔案進行處理。")
+
+        try:
+            # 建立 after_trans 資料夾
+            results_folder = os.path.join(target_dir, "after_trans")
+            os.makedirs(results_folder, exist_ok=True)
+
+            # 尋找包含 con1_ 的檔案來製作 isub_igate
+            con1_file = None
+
+            for file_path in raw_files:
+                source_file = os.path.basename(file_path)
+                self.log(filename_msg := f"正在處理檔案: {source_file}")
+
+                # 讀取 Excel 中的各個分頁 (Sheet)
+                xls = pd.ExcelFile(file_path)
+                sheet_names = xls.sheet_names
+
+                # 檢查必要的工作表是否存在
+                required_sheets = ["Model team Fitting data", "IdVg_raw", "IdVd_raw", "Parameter"]
+                for req in required_sheets:
+                    if req not in sheet_names:
+                        raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
+
+                df_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
+                df_idvg = pd.read_excel(file_path, sheet_name="IdVg_raw", header=None)
+                df_idvd = pd.read_excel(file_path, sheet_name="IdVd_raw", header=None)
+                df_param = pd.read_excel(file_path, sheet_name="Parameter", header=None)
+
+                # 剖析檔名以建立新工作表名稱 (例如: prefix1_prefix2_IV_t0)
+                sp1 = source_file.split("_")
+                if len(sp1) >= 2:
+                    newname = f"{sp1[0]}_{sp1[1]}_IV_t0"
+                    newname2 = f"{sp1[0]}_{sp1[1]}_IV_filnal_stress"
+                else:
+                    newname = f"{sp1[0]}_IV_t0"
+                    newname2 = f"{sp1[0]}_IV_filnal_stress"
+
+                # 執行轉檔運算
+                lines_t0 = self.hci_IV_t0(df_fitting, df_idvg, df_idvd)
+                lines_final = self.hci_iv_final_stress(df_fitting, df_idvg, df_idvd, df_param)
+
+                # 暫存轉換後的文字行，準備供 SAVE 使用
+                self.trans_results[newname] = lines_t0
+                self.trans_results[newname2] = lines_final
+
+                if "con1_" in source_file and not con1_file:
+                    con1_file = file_path
+
+            # 處理 isub_igate (若找到 con1_ 檔案)
+            if con1_file:
+                self.log(f"發現包含 con1_ 的檔案: {os.path.basename(con1_file)}，正在產生 isub_igate...")
+                xls_con1 = pd.ExcelFile(con1_file)
+                if "IBIG_VG" in xls_con1.sheet_names:
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name="Model team Fitting data", header=None)
+                    df_ibig = pd.read_excel(con1_file, sheet_name="IBIG_VG", header=None)
+                    lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
+                    self.trans_results["isub_igate"] = lines_isub
+
+            self.log("=== HCI IV DATA 轉檔完成！ ===")
+            messagebox.showinfo("成功", "HCI IV 轉檔程序已全部完成！")
+
         except Exception as e:
-            self.log(f"讀取資料夾檔案失敗: {str(e)}")
+            self.log(f"轉檔過程發生錯誤: {str(e)}")
+            messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
-    def check_folder(self):
-        folder = self.folder_path.get()
-        if not folder or not os.path.exists(folder):
-            self.log("錯誤: 請先選擇有效的資料夾！")
-            return None
-        results_folder = os.path.join(folder, "after_trans")
-        if not os.path.exists(results_folder):
-            os.makedirs(results_folder)
-        return folder
-
-    # ==================== 共用純文字寫入 (第三行空白、無引號) ====================
-    def save_to_dat_files(self):
-        if not self.processed_data_dict:
-            self.log("錯誤: 沒有可儲存的資料！")
-            return
-            
-        folder = self.folder_path.get()
-        results_folder = os.path.join(folder, "after_trans")
-        
-        self.log("開始清理空白列並儲存 .dat 檔案...")
-        for name, df in self.processed_data_dict.items():
-            df_cleaned = df.dropna(how='all').reset_index(drop=True)
-            out_path = os.path.join(results_folder, f"{name}.dat")
-            
-            with open(out_path, 'w', encoding='utf-8') as f:
-                for val in df_cleaned[0]:
-                    if pd.isna(val) or str(val).strip() == "":
-                        f.write("\n")
-                    else:
-                        f.write(f"{val}\n")
-            self.log(f"已儲存: {out_path}")
-        self.log("全部檔案儲存完成！")
-
-    # ==================== Part 1 邏輯 ====================
-    def run_spec_data(self):
-        folder = self.check_folder()
-        if not folder: return
-        
-        self.log("開始執行 spec Data 轉檔...")
-        file_list = glob.glob(os.path.join(folder, "*.xls*"))
-        if not file_list:
-            self.log("警告: 指定資料夾中找不到任何檔案！")
-            return
-            
-        self.processed_data_dict = {} 
-        for file_path in file_list:
-            filename = os.path.basename(file_path)
-            self.log(f"正在處理檔案: {filename}")
-            try:
-                sp1 = filename.split("_")
-                newname = f"{sp1[0]}_{sp1[1]}" if len(sp1) >= 2 else os.path.splitext(filename)[0]
-                
-                xls = pd.ExcelFile(file_path)
-                if "Model team Fitting data" not in xls.sheet_names:
-                    continue
-                ws1_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
-                
-                W = ws1_fitting.iloc[8, 1]
-                L = ws1_fitting.iloc[9, 1]
-                T = ws1_fitting.iloc[7, 1]
-                cell_3_2 = ws1_fitting.iloc[2, 1]
-                mos_type = "NMOS" if pd.notna(cell_3_2) and float(cell_3_2) > 0 else "PMOS"
-                
-                a_str = f"Instance{{W={W},L={L},T={T}}}"
-                b_str = f"DataType{{{mos_type}}}"
-                
-                col_g = ws1_fitting.iloc[11:, 6].dropna()
-                g1_last_row = col_g.index[-1] + 1
-                num = g1_last_row - 10
-                
-                target_rows = [
-                    "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd",
-                    "// All rights reserved.", "",
-                    "ObjInfo{}", "ProbeInfo{}", "Version{4.1}", "ModelType{DC}",
-                    b_str, "Delimiter{,}", "WorkingMode{Forward}", a_str,
-                    "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}",
-                    "MeasurementSetup{PDA}", "Input{Time}", "Output{vtlin,vtgm,vtsat,idlin,idsat}"
-                ]
-                df_target = pd.DataFrame({0: target_rows})
-                
-                extra_data = [ws1_fitting.iloc[11:11+num, 6 + j * 3].reset_index(drop=True) for j in range(5)]
-                combined_extra = pd.concat(extra_data, ignore_index=True)
-                df_target = pd.concat([df_target, combined_extra.to_frame(name=0)], ignore_index=True)
-                
-                self.processed_data_dict[newname] = df_target
-                self.log(f"  -> 成功處理並暫存: {newname}")
-            except Exception as e:
-                self.log(f"  -> 處理 {filename} 錯誤: {str(e)}")
-        self.log("spec Data 執行完畢！")
-
-    def run_save_wi_vtgm(self):
-        self.save_to_dat_files()
-
-    def run_save_wo_vtgm(self):
-        if not self.processed_data_dict: return
-        for name, df in self.processed_data_dict.items():
-            match_idx = df[df[0].astype(str).str.contains(r"\{vtgm_Time\}", case=False, na=False)].index
-            if not match_idx.empty:
-                row_idx = match_idx[0]
-                self.processed_data_dict[name] = df.iloc[:row_idx].reset_index(drop=True)
-        self.save_to_dat_files()
-
-    # ==================== Part 2: HCI IV Data 邏輯 ====================
-    def run_hci_iv_trans(self):
-        folder = self.check_folder()
-        if not folder: return
-        
-        self.log("開始執行 HCI IV Data 轉檔...")
-        file_list = glob.glob(os.path.join(folder, "*.xls*"))
-        if not file_list:
-            self.log("警告: 找不到檔案！")
-            return
-            
-        self.processed_data_dict = {}
-        for file_path in file_list:
-            filename = os.path.basename(file_path)
-            self.log(f"正在處理 HCI 檔案: {filename}")
-            try:
-                sp1 = filename.split("_")
-                prefix = f"{sp1[0]}_{sp1[1]}" if len(sp1) >= 2 else os.path.splitext(filename)[0]
-                
-                xls = pd.ExcelFile(file_path)
-                ws1_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
-                ws_idvg = pd.read_excel(file_path, sheet_name="IdVg_raw", header=None)
-                ws_idvd = pd.read_excel(file_path, sheet_name="IdVd_raw", header=None)
-                ws_param = pd.read_excel(file_path, sheet_name="Parameter", header=None) if "Parameter" in xls.sheet_names else None
-                
-                W, L, T = ws1_fitting.iloc[8, 1], ws1_fitting.iloc[9, 1], ws1_fitting.iloc[7, 1]
-                vdlin, vdd = ws1_fitting.iloc[13, 1], ws1_fitting.iloc[12, 1]
-                vdstr, vgstr, vbstr = ws1_fitting.iloc[3, 1], ws1_fitting.iloc[2, 1], ws1_fitting.iloc[5, 1]
-                mos_type = "NMOS" if ws1_fitting.iloc[2, 1] > 0 else "PMOS"
-                
-                a_str = f"Instance{{W={W},L={L},T={T}}}"
-                b_str = f"DataType{{{mos_type}}}"
-                
-                # 1. hci_IV_t0
-                self.processed_data_dict[f"{prefix}_IV_t0"] = self._build_hci_t0(
-                    ws_idvg, ws_idvd, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
-                )
-                
-                # 2. hci_iv_final_stress
-                if ws_param is not None:
-                    self.processed_data_dict[f"{prefix}_IV_filnal_stress"] = self._build_hci_final(
-                        ws_idvg, ws_idvd, ws_param, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
-                    )
-                    
-                self.log(f"  -> HCI 處理成功: {prefix}")
-            except Exception as e:
-                self.log(f"  -> HCI 處理 {filename} 錯誤: {str(e)}")
-        self.log("HCI IV Data 轉檔完畢！可點擊 SAVE IV Data 輸出。")
-
-    def _build_hci_t0(self, ws_idvg, ws_idvd, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
+    def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
+        """對應 VBA 的 hci_IV_t0 邏輯"""
+        w = df_fitting.iloc[8, 1]
+        l_val = df_fitting.iloc[9, 1]
+        t_val = df_fitting.iloc[7, 1]
+        vdlin = df_fitting.iloc[13, 1]
+        vdd = df_fitting.iloc[12, 1]
+        vdstr = df_fitting.iloc[3, 1]
+        vgstr = df_fitting.iloc[2, 1]
+        vbstr = df_fitting.iloc[5, 1]
         time_str = "0"
+
+        mos_type = "NMOS" if df_fitting.iloc[2, 1] > 0 else "PMOS"
+
+        a = f"Instance{{W={w},L={l_val},T={t_val}}}"
+        b = f"DataType{{{mos_type}}}"
         c = f"[vgs,Id(vbs=0.00000),vds={vdlin},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
-        
-        num = ws_idvg.iloc[14:, 1].dropna().index[-1] + 1 - 14
-        num2 = ws_idvd.iloc[17:, 1].dropna().index[-1] + 1 - 17
-        
-        headers = [
-            "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd", "// All rights reserved.", "",
-            "ObjInfo{}", "ProbeInfo{}", "Version{4.1}", "ModelType{DC}", b, "Delimiter{,}",
-            "WorkingMode{Forward}", a, "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}",
-            "MeasurementSetup{PDA}", "Input{vgs,vbs,vds}", "Output{Id,Isub}",
-            "{MOS_Id_Vgs_Vbs_DC}", c
-        ]
-        rows = [""] * (26 + num * 2 + num2 + 5)
-        for idx, h in enumerate(headers): rows[idx] = h
-        
-        rows[18 + num - 1] = "{MOS_Id_Vgs_Vbs_DC}"
-        rows[19 + num - 1] = d
-        rows[23 + num * 2 - 1] = "{MOS_Id_Vds_Vgs_DC}"
-        rows[24 + num * 2 - 1] = e
-        
-        for i in range(num):
-            rows[17 + i] = f"{ws_idvg.iloc[14 + i, 0]},{ws_idvg.iloc[14 + i, 1]}"
-            rows[20 + num + i] = f"{ws_idvg.iloc[14 + i, 0]},{ws_idvg.iloc[14 + i, 3]}"
-        for j in range(num2):
-            rows[25 + num * 2 + j] = f"{ws_idvd.iloc[17 + j, 0]},{ws_idvd.iloc[17 + j, 1]}"
-        return pd.DataFrame({0: rows})
 
-    def _build_hci_final(self, ws_idvg, ws_idvd, ws_param, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
-        tstress_row = ws_param[ws_param.apply(lambda row: row.astype(str).str.contains("Tstress").any(), axis=1)]
-        if tstress_row.empty:
-            time_str = "0"
-        else:
-            r_idx = tstress_row.index[0]
-            g3 = ws_param.iloc[r_idx:, 0].dropna().index[-1]
-            time_str = str(float(ws_param.iloc[g3, 0]) / 60)
-            
+        # Python index 從 0 開始，對應 Excel 第 15 列 (index 14)
+        num = len(df_idvg) - 14
+        num2 = len(df_idvd) - 17
+
+        lines = [""] * (26 + 2 * num + num2)
+        lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
+        lines[1] = "// All rights reserved."
+        lines[3] = "ObjInfo{}"
+        lines[4] = "ProbeInfo{}"
+        lines[5] = "Version{4.1}"
+        lines[6] = "ModelType{DC}"
+        lines[7] = b
+        lines[8] = "Delimiter{,}"
+        lines[9] = "WorkingMode{Forward}"
+        lines[10] = a
+        lines[11] = "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}"
+        lines[12] = "MeasurementSetup{PDA}"
+        lines[13] = "Input{vgs,vbs,vds}"
+        lines[14] = "Output{Id,Isub}"
+        lines[15] = "{MOS_Id_Vgs_Vbs_DC}"
+        lines[16] = c
+
+        lines[18 + num] = "{MOS_Id_Vgs_Vbs_DC}"
+        lines[19 + num] = d
+        lines[23 + 2 * num] = "{MOS_Id_Vds_Vgs_DC}"
+        lines[24 + 2 * num] = e
+
+        for i in range(num + 1):
+            if 14 + i < len(df_idvg):
+                v1 = df_idvg.iloc[14 + i, 0]
+                v2 = df_idvg.iloc[14 + i, 1]
+                v4 = df_idvg.iloc[14 + i, 3]
+                lines[17 + i] = f"{v1},{v2}"
+                lines[20 + num + i] = f"{v1},{v4}"
+
+        for j in range(num2 + 1):
+            if 17 + j < len(df_idvd):
+                v1 = df_idvd.iloc[17 + j, 0]
+                v2 = df_idvd.iloc[17 + j, 1]
+                lines[25 + 2 * num + j] = f"{v1},{v2}"
+
+        return [line for line in lines if line is not None]
+
+    def hci_iv_final_stress(self, df_fitting, df_idvg, df_idvd, df_param):
+        """對應 VBA 的 hci_iv_final_stress 邏輯"""
+        w = df_fitting.iloc[8, 1]
+        l_val = df_fitting.iloc[9, 1]
+        t_val = df_fitting.iloc[7, 1]
+        vdlin = df_fitting.iloc[13, 1]
+        vdd = df_fitting.iloc[12, 1]
+        vdstr = df_fitting.iloc[3, 1]
+        vgstr = df_fitting.iloc[2, 1]
+        vbstr = df_fitting.iloc[5, 1]
+
+        # 尋找 Parameter sheet 中的 Tstress
+        tstress_row = None
+        for r_idx, row in df_param.iterrows():
+            for c_idx, val in enumerate(row):
+                if val == "Tstress":
+                    tstress_row = r_idx
+                    break
+            if tstress_row is not None:
+                break
+
+        if tstress_row is None:
+            raise ValueError("Parameter sheet 找不到 'Tstress'")
+
+        # 往下找資料列
+        g3 = tstress_row
+        while g3 + 1 < len(df_param) and pd.notna(df_param.iloc[g3 + 1, 0]):
+            g3 += 1
+        time_str = float(df_param.iloc[g3, 0]) / 60
+
+        mos_type = "NMOS" if df_fitting.iloc[2, 1] > 0 else "PMOS"
+
+        a = f"Instance{{W={w},L={l_val},T={t_val}}}"
+        b = f"DataType{{{mos_type}}}"
         c = f"[vgs,Id(vbs=0.00000),vds={vdlin},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
-        
-        num = ws_idvg.iloc[14:, 1].dropna().index[-1] + 1 - 14
-        num2 = ws_idvd.iloc[17:, 1].dropna().index[-1] + 1 - 17
-        num3 = ws_idvg.iloc[:, 0].dropna().index[-1] + 1 - num
-        num4 = ws_idvd.iloc[:, 0].dropna().index[-1] + 1 - num2
-        
-        headers = [
-            "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd", "// All rights reserved.", "",
-            "ObjInfo{}", "ProbeInfo{}", "Version{4.1}", "ModelType{DC}", b, "Delimiter{,}",
-            "WorkingMode{Forward}", a, "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}",
-            "MeasurementSetup{PDA}", "Input{vgs,vbs,vds}", "Output{Id,Isub}",
-            "{MOS_Id_Vgs_Vbs_DC}", c
-        ]
-        rows = [""] * (26 + num * 2 + num2 + 5)
-        for idx, h in enumerate(headers): rows[idx] = h
-        
-        rows[18 + num - 1] = "{MOS_Id_Vgs_Vbs_DC}"
-        rows[19 + num - 1] = d
-        rows[23 + num * 2 - 1] = "{MOS_Id_Vds_Vgs_DC}"
-        rows[24 + num * 2 - 1] = e
-        
-        for i in range(num):
-            rows[17 + i] = f"{ws_idvg.iloc[num3 + i, 0]},{ws_idvg.iloc[num3 + i, 1]}"
-            rows[20 + num + i] = f"{ws_idvg.iloc[num3 + i, 0]},{ws_idvg.iloc[num3 + i, 3]}"
-        for j in range(num2):
-            rows[25 + num * 2 + j] = f"{ws_idvd.iloc[num4 + j, 0]},{ws_idvd.iloc[num4 + j, 1]}"
-        return pd.DataFrame({0: rows})
 
-    # ==================== Part 3: BTI IV Data 邏輯 ====================
-    def run_bti_iv_trans(self):
-        folder = self.check_folder()
-        if not folder: return
-        
-        self.log("開始執行 BTI IV Data 轉檔...")
-        file_list = glob.glob(os.path.join(folder, "*.xls*"))
-        if not file_list:
-            self.log("警告: 找不到檔案！")
+        num = len(df_idvg) - 15
+        num2 = len(df_idvd) - 18
+        # 對應 VBA 尋找區段
+        num3 = max(0, len(df_idvg) - num)
+        num4 = max(0, len(df_idvd) - num2)
+
+        lines = [""] * (26 + 2 * num + num2)
+        lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
+        lines[1] = "// All rights reserved."
+        lines[3] = "ObjInfo{}"
+        lines[4] = "ProbeInfo{}"
+        lines[5] = "Version{4.1}"
+        lines[6] = "ModelType{DC}"
+        lines[7] = b
+        lines[8] = "Delimiter{,}"
+        lines[9] = "WorkingMode{Forward}"
+        lines[10] = a
+        lines[11] = "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}"
+        lines[12] = "MeasurementSetup{PDA}"
+        lines[13] = "Input{vgs,vbs,vds}"
+        lines[14] = "Output{Id,Isub}"
+        lines[15] = "{MOS_Id_Vgs_Vbs_DC}"
+        lines[16] = c
+
+        lines[18 + num] = "{MOS_Id_Vgs_Vbs_DC}"
+        lines[19 + num] = d
+        lines[23 + 2 * num] = "{MOS_Id_Vds_Vgs_DC}"
+        lines[24 + 2 * num] = e
+
+        for i in range(num + 1):
+            target_idx = num3 + i
+            if target_idx < len(df_idvg):
+                v1 = df_idvg.iloc[target_idx, 0]
+                v2 = df_idvg.iloc[target_idx, 1]
+                v4 = df_idvg.iloc[target_idx, 3]
+                lines[17 + i] = f"{v1},{v2}"
+                lines[20 + num + i] = f"{v1},{v4}"
+
+        for j in range(num2 + 1):
+            target_idx = num4 + j
+            if target_idx < len(df_idvd):
+                v1 = df_idvd.iloc[target_idx, 0]
+                v2 = df_idvd.iloc[target_idx, 1]
+                lines[25 + 2 * num + j] = f"{v1},{v2}"
+
+        return [line for line in lines if line is not None]
+
+    def isub_igate_iv(self, df_fitting, df_ibig):
+        """對應 VBA 的 ISUB_IGATE_IV 邏輯"""
+        w = df_fitting.iloc[8, 1]
+        l_val = df_fitting.iloc[9, 1]
+        t_val = df_fitting.iloc[7, 1]
+        vdd = df_ibig.iloc[2, 1]
+        mos_type = "NMOS" if df_fitting.iloc[2, 1] > 0 else "PMOS"
+
+        a = f"Instance{{W={w},L={l_val},T={t_val}}}"
+        b = f"DataType{{{mos_type}}}"
+
+        vg_num = len(df_ibig) - 34
+
+        lines = [""] * (22 + vg_num * 2)
+        lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
+        lines[1] = "// All rights reserved."
+        lines[3] = "ObjInfo{}"
+        lines[4] = "ProbeInfo{}"
+        lines[5] = "Version{4.1}"
+        lines[6] = "ModelType{DC}"
+        lines[7] = b
+        lines[8] = "Delimiter{,}"
+        lines[9] = "WorkingMode{Forward}"
+        lines[10] = a
+        lines[11] = "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}"
+        lines[12] = "MeasurementSetup{PDA}"
+        lines[13] = "Input{vgs,vbs,vds}"
+        lines[14] = "Output{Id,Isub}"
+        lines[15] = "{MOS_Isub_Vgs_Vds_DC}"
+        lines[16] = f"[vgs,Isub(vds={vdd}),vbs=0.00000,ref_vs=0.00000]"
+        lines[18 + vg_num] = "{Igate_Vgs_Vds_DC}"
+        lines[19 + vg_num] = f"[vgs,Ig(vds={vdd}),vbs=0.00000,ref_vs=0.00000]"
+
+        for i in range(vg_num + 1):
+            row_idx = 33 + 1 + i
+            if row_idx < len(df_ibig):
+                v1 = df_ibig.iloc[row_idx, 0]
+                v5 = df_ibig.iloc[row_idx, 4]
+                v3 = df_ibig.iloc[row_idx, 2]
+                lines[17 + i] = f"{v1},{v5}"
+                lines[20 + vg_num + i] = f"{v1},{v3}"
+
+        return [line for line in lines if line is not None]
+
+    def run_save_dat(self):
+        """執行 SAVE IV DATA 按鈕邏輯"""
+        target_dir = self.path_entry.get().strip()
+        if not target_dir or not os.path.isdir(target_dir):
+            messagebox.showerror("錯誤", "請先選擇有效的資料夾路徑！")
             return
-            
-        self.processed_data_dict = {}
-        for file_path in file_list:
-            filename = os.path.basename(file_path)
-            self.log(f"正在處理 BTI 檔案: {filename}")
+
+        if not self.trans_results:
+            messagebox.showwarning("提示", "目前沒有可儲存的轉檔資料，請先執行 'HCI IV DATA' 轉檔！")
+            return
+
+        self.log("=== 開始儲存 .dat 檔案 ===")
+        results_folder = os.path.join(target_dir, "after_trans")
+        os.makedirs(results_folder, exist_ok=True)
+
+        saved_count = 0
+        for sheet_name, lines in self.trans_results.items():
+            file_path = os.path.join(results_folder, f"{sheet_name}.dat")
             try:
-                sp1 = filename.split("_")
-                prefix = f"{sp1[0]}_{sp1[1]}" if len(sp1) >= 2 else os.path.splitext(filename)[0]
-                
-                xls = pd.ExcelFile(file_path)
-                ws1_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
-                ws_vtlin = pd.read_excel(file_path, sheet_name="IdVg_vtlin_raw", header=None)
-                ws_vtsat = pd.read_excel(file_path, sheet_name="IdVg_vtsat_raw", header=None)
-                ws_single = pd.read_excel(file_path, sheet_name="single Id", header=None) if "single Id" in xls.sheet_names else None
-                
-                W, L, T = ws1_fitting.iloc[8, 1], ws1_fitting.iloc[9, 1], ws1_fitting.iloc[7, 1]
-                vdlin, vdd = ws1_fitting.iloc[13, 1], ws1_fitting.iloc[12, 1]
-                vdstr, vgstr, vbstr = ws1_fitting.iloc[3, 1], ws1_fitting.iloc[2, 1], ws1_fitting.iloc[5, 1]
-                mos_type = "NMOS" if ws1_fitting.iloc[2, 1] > 0 else "PMOS"
-                
-                a_str = f"Instance{{W={W},L={L},T={T}}}"
-                b_str = f"DataType{{{mos_type}}}"
-                
-                # 1. BTI_IV_t0
-                self.processed_data_dict[f"{prefix}_IV_t0"] = self._build_bti_t0(
-                    ws_vtlin, ws_vtsat, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
-                )
-                
-                # 2. BTI_IV_final_stress
-                if ws_single is not None:
-                    self.processed_data_dict[f"{prefix}_IV_filnal_stress"] = self._build_bti_final(
-                        ws_vtlin, ws_vtsat, ws_single, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
-                    )
-                    
-                self.log(f"  -> BTI 處理成功: {prefix}")
+                with open(file_path, "w", encoding="utf-8") as f:
+                    for line in lines:
+                        f.write(str(line) + "\n")
+                self.log(f"已儲存: {sheet_name}.dat")
+                saved_count += 1
             except Exception as e:
-                self.log(f"  -> BTI 處理 {filename} 錯誤: {str(e)}")
-        self.log("BTI IV Data 轉檔完畢！可點擊 SAVE IV Data 輸出。")
+                self.log(f"儲存 {sheet_name}.dat 失敗: {str(e)}")
 
-    def _build_bti_t0(self, ws_vtlin, ws_vtsat, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
-        time_str = "0"
-        c = f"[vgs,Id(vbs=0.00000),vds={vdlin},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
-        d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
-        
-        num = ws_vtlin.iloc[13:, 0].dropna().index[-1] + 1 - 13
-        
-        headers = [
-            "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd", "// All rights reserved.", "",
-            "ObjInfo{}", "ProbeInfo{}", "Version{4.1}", "ModelType{DC}", b, "Delimiter{,}",
-            "WorkingMode{Forward}", a, "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}",
-            "MeasurementSetup{PDA}", "Input{vgs,vbs,vds}", "Output{Id,Isub}",
-            "{MOS_Id_Vgs_Vbs_DC}", c
-        ]
-        rows = [""] * (20 + num * 2)
-        for idx, h in enumerate(headers): rows[idx] = h
-        
-        rows[18 + num - 1] = "{MOS_Id_Vgs_Vbs_DC}"
-        rows[19 + num - 1] = d
-        
-        for i in range(num):
-            rows[17 + i] = f"{ws_vtlin.iloc[13 + i, 0]},{ws_vtlin.iloc[13 + i, 1]}"
-            rows[20 + num + i] = f"{ws_vtsat.iloc[13 + i, 0]},{ws_vtsat.iloc[13 + i, 1]}"
-        return pd.DataFrame({0: rows})
-
-    def _build_bti_final(self, ws_vtlin, ws_vtsat, ws_single, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
-        g3 = ws_single.iloc[:, 0].dropna().index[-1]
-        time_str = str(float(ws_single.iloc[g3, 0]) / 60)
-        
-        c = f"[vgs,Id(vbs=0.00000),vds={vdlin},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
-        d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
-        
-        num = ws_vtlin.iloc[13:, 0].dropna().index[-1] + 1 - 13
-        
-        match_lin = ws_vtlin[ws_vtlin.apply(lambda row: row.astype(str).str.contains("Vg\(V\)").any(), axis=1)]
-        g4 = match_lin.index[0] if not match_lin.empty else 0
-        
-        match_sat = ws_vtsat[ws_vtsat.apply(lambda row: row.astype(str).str.contains("Vg\(V\)").any(), axis=1)]
-        g5 = match_sat.index[0] if not match_sat.empty else 0
-        
-        headers = [
-            "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd", "// All rights reserved.", "",
-            "ObjInfo{}", "ProbeInfo{}", "Version{4.1}", "ModelType{DC}", b, "Delimiter{,}",
-            "WorkingMode{Forward}", a, "Node{D|7|0.000000,G|8|0.000000,S|6|0.000000,B|5|0.000000}",
-            "MeasurementSetup{PDA}", "Input{vgs,vbs,vds}", "Output{Id,Isub}",
-            "{MOS_Id_Vgs_Vbs_DC}", c
-        ]
-        rows = [""] * (20 + num * 2)
-        for idx, h in enumerate(headers): rows[idx] = h
-        
-        rows[18 + num - 1] = "{MOS_Id_Vgs_Vbs_DC}"
-        rows[19 + num - 1] = d
-        
-        for i in range(num):
-            rows[17 + i] = f"{ws_vtlin.iloc[g4 + 1 + i, 0]},{ws_vtlin.iloc[g4 + 1 + i, 1]}"
-            rows[20 + num + i] = f"{ws_vtsat.iloc[g5 + 1 + i, 0]},{ws_vtsat.iloc[g5 + 1 + i, 1]}"
-        return pd.DataFrame({0: rows})
-
-    # ==================== 共用 SAVE_IV_dat ====================
-    def run_save_iv_dat(self):
-        self.save_to_dat_files()
+        self.log(f"=== 儲存完成！共輸出 {saved_count} 個檔案至 after_trans 資料夾 ===")
+        messagebox.showinfo("成功", f"成功儲存 {saved_count} 個 .dat 檔案到 after_trans 目錄！")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = SpecDataConverterApp(root)
+    app = IVTransApp(root)
     root.mainloop()
