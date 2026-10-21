@@ -10,7 +10,7 @@ class IVTransApp:
         self.root.title("HCI IV Data 轉檔工具")
         self.root.geometry("800x650")
 
-        # 儲存轉換後的資料結構（格式：{檔名: {工作表名: 資料內容}}）
+        # 儲存轉換後的資料結構（格式：{檔名: 資料內容清單}）
         self.trans_results = {}
 
         self.create_widgets()
@@ -66,6 +66,21 @@ class IVTransApp:
             for f in files:
                 self.log(f"  • {f}")
             self.log("-" * 50)
+
+    def format_val(self, val):
+        """將數值轉換為字串，強制避免科學記號 e"""
+        if pd.isna(val):
+            return "0.000000"
+        try:
+            f_val = float(val)
+            # 若為整數或浮點數，轉為一般小數點表示法，避免科學記號
+            if f_val.is_integer():
+                return str(int(f_val))
+            else:
+                # 預留足夠小數點位數，可依需求調整
+                return f"{f_val:.6f}".rstrip('0').rstrip('.') if '.' in f"{f_val:.6f}" else f"{f_val:.6f}"
+        except ValueError:
+            return str(val)
 
     def run_hci_trans(self):
         """執行 HCI IV DATA 轉檔邏輯"""
@@ -156,17 +171,18 @@ class IVTransApp:
             messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
     def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
-        w = df_fitting.iloc[8, 1]
-        l_val = df_fitting.iloc[9, 1]
-        t_val = df_fitting.iloc[7, 1]
-        vdlin = df_fitting.iloc[13, 1]
-        vdd = df_fitting.iloc[12, 1]
-        vdstr = df_fitting.iloc[3, 1]
-        vgstr = df_fitting.iloc[2, 1]
-        vbstr = df_fitting.iloc[5, 1]
+        # 參數讀取 (對應 VBA Excel row - 1)
+        w = self.format_val(df_fitting.iloc[8, 1])
+        l_val = self.format_val(df_fitting.iloc[9, 1])
+        t_val = self.format_val(df_fitting.iloc[7, 1])
+        vdlin = self.format_val(df_fitting.iloc[13, 1])
+        vdd = self.format_val(df_fitting.iloc[12, 1])
+        vdstr = self.format_val(df_fitting.iloc[3, 1])
+        vgstr = self.format_val(df_fitting.iloc[2, 1])
+        vbstr = self.format_val(df_fitting.iloc[5, 1])
         time_str = "0"
 
-        mos_type = "NMOS" if df_fitting.iloc[2, 1] > 0 else "PMOS"
+        mos_type = "NMOS" if float(df_fitting.iloc[2, 1]) > 0 else "PMOS"
 
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
@@ -174,8 +190,18 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        num = len(df_idvg) - 14
-        num2 = len(df_idvd) - 17
+        # 對應 VBA: G1 = Cells(15,2).End(xlDown).Row -> num = G1 - 15 (Python index 14 為 Excel 第 15 列)
+        # 尋找 IdVg_raw 第 2 欄有資料的最末列
+        g1 = 14
+        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g1 + 1, 1]):
+            g1 += 1
+        num = g1 - 14
+
+        # 對應 VBA: G2 = Cells(18,2).End(xlDown).Row -> num2 = G2 - 18 (Python index 17 為 Excel 第 18 列)
+        g2 = 17
+        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g2 + 1, 1]):
+            g2 += 1
+        num2 = g2 - 17
 
         lines = [""] * (26 + 2 * num + num2)
         lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
@@ -201,32 +227,34 @@ class IVTransApp:
         lines[24 + 2 * num] = e
 
         for i in range(num + 1):
-            if 14 + i < len(df_idvg):
-                v1 = df_idvg.iloc[14 + i, 0]
-                v2 = df_idvg.iloc[14 + i, 1]
-                v4 = df_idvg.iloc[14 + i, 3]
+            row_idx = 14 + i
+            if row_idx < len(df_idvg):
+                v1 = self.format_val(df_idvg.iloc[row_idx, 0])
+                v2 = self.format_val(df_idvg.iloc[row_idx, 1])
+                v4 = self.format_val(df_idvg.iloc[row_idx, 3])
                 lines[17 + i] = f"{v1},{v2}"
                 lines[20 + num + i] = f"{v1},{v4}"
 
         for j in range(num2 + 1):
-            if 17 + j < len(df_idvd):
-                v1 = df_idvd.iloc[17 + j, 0]
-                v2 = df_idvd.iloc[17 + j, 1]
+            row_idx = 17 + j
+            if row_idx < len(df_idvd):
+                v1 = self.format_val(df_idvd.iloc[row_idx, 0])
+                v2 = self.format_val(df_idvd.iloc[row_idx, 1])
                 lines[25 + 2 * num + j] = f"{v1},{v2}"
 
         return [line for line in lines if line is not None]
 
     def hci_iv_final_stress(self, df_fitting, df_idvg, df_idvd, df_param):
-        w = df_fitting.iloc[8, 1]
-        l_val = df_fitting.iloc[9, 1]
-        t_val = df_fitting.iloc[7, 1]
-        vdlin = df_fitting.iloc[13, 1]
-        vdd = df_fitting.iloc[12, 1]
-        vdstr = df_fitting.iloc[3, 1]
-        vgstr = df_fitting.iloc[2, 1]
-        vbstr = df_fitting.iloc[5, 1]
+        w = self.format_val(df_fitting.iloc[8, 1])
+        l_val = self.format_val(df_fitting.iloc[9, 1])
+        t_val = self.format_val(df_fitting.iloc[7, 1])
+        vdlin = self.format_val(df_fitting.iloc[13, 1])
+        vdd = self.format_val(df_fitting.iloc[12, 1])
+        vdstr = self.format_val(df_fitting.iloc[3, 1])
+        vgstr = self.format_val(df_fitting.iloc[2, 1])
+        vbstr = self.format_val(df_fitting.iloc[5, 1])
 
-        # 尋找 Parameter sheet 中的 Tstress (不分大小寫)
+        # 尋找 Parameter sheet 中的 Tstress
         tstress_row = None
         for r_idx, row in df_param.iterrows():
             for c_idx, val in enumerate(row):
@@ -242,9 +270,11 @@ class IVTransApp:
         g3 = tstress_row
         while g3 + 1 < len(df_param) and pd.notna(df_param.iloc[g3 + 1, 0]):
             g3 += 1
-        time_str = float(df_param.iloc[g3, 0]) / 60
+        
+        raw_time = float(df_param.iloc[g3, 0])
+        time_str = self.format_val(raw_time / 60)
 
-        mos_type = "NMOS" if df_fitting.iloc[2, 1] > 0 else "PMOS"
+        mos_type = "NMOS" if float(df_fitting.iloc[2, 1]) > 0 else "PMOS"
 
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
@@ -252,10 +282,27 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        num = len(df_idvg) - 15
-        num2 = len(df_idvd) - 18
-        num3 = max(0, len(df_idvg) - num)
-        num4 = max(0, len(df_idvd) - num2)
+        # 對應 VBA 邏輯計算區段長度
+        g1 = 14
+        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g1 + 1, 1]):
+            g1 += 1
+        num = g1 - 14
+
+        g2 = 17
+        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g2 + 1, 1]):
+            g2 += 1
+        num2 = g2 - 17
+
+        # G4 = Cells(1,1).End(xlDown).Row -> num3 = G4 - num
+        g4 = 0
+        while g4 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g4 + 1, 0]):
+            g4 += 1
+        num3 = max(0, g4 - num)
+
+        g5 = 0
+        while g5 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g5 + 1, 0]):
+            g5 += 1
+        num4 = max(0, g5 - num2)
 
         lines = [""] * (26 + 2 * num + num2)
         lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
@@ -283,32 +330,36 @@ class IVTransApp:
         for i in range(num + 1):
             target_idx = num3 + i
             if target_idx < len(df_idvg):
-                v1 = df_idvg.iloc[target_idx, 0]
-                v2 = df_idvg.iloc[target_idx, 1]
-                v4 = df_idvg.iloc[target_idx, 3]
+                v1 = self.format_val(df_idvg.iloc[target_idx, 0])
+                v2 = self.format_val(df_idvg.iloc[target_idx, 1])
+                v4 = self.format_val(df_idvg.iloc[target_idx, 3])
                 lines[17 + i] = f"{v1},{v2}"
                 lines[20 + num + i] = f"{v1},{v4}"
 
         for j in range(num2 + 1):
             target_idx = num4 + j
             if target_idx < len(df_idvd):
-                v1 = df_idvd.iloc[target_idx, 0]
-                v2 = df_idvd.iloc[target_idx, 1]
+                v1 = self.format_val(df_idvd.iloc[target_idx, 0])
+                v2 = self.format_val(df_idvd.iloc[target_idx, 1])
                 lines[25 + 2 * num + j] = f"{v1},{v2}"
 
         return [line for line in lines if line is not None]
 
     def isub_igate_iv(self, df_fitting, df_ibig):
-        w = df_fitting.iloc[8, 1]
-        l_val = df_fitting.iloc[9, 1]
-        t_val = df_fitting.iloc[7, 1]
-        vdd = df_ibig.iloc[2, 1]
-        mos_type = "NMOS" if df_fitting.iloc[2, 1] > 0 else "PMOS"
+        w = self.format_val(df_fitting.iloc[8, 1])
+        l_val = self.format_val(df_fitting.iloc[9, 1])
+        t_val = self.format_val(df_fitting.iloc[7, 1])
+        vdd = self.format_val(df_ibig.iloc[2, 1])
+        mos_type = "NMOS" if float(df_fitting.iloc[2, 1]) > 0 else "PMOS"
 
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
 
-        vg_num = len(df_ibig) - 34
+        # G1 = Cells(33, 1).End(xlDown).Row -> vg_num = G1 - 34 (Python index 33 為 Excel 第 34 列)
+        g1 = 33
+        while g1 + 1 < len(df_ibig) and pd.notna(df_ibig.iloc[g1 + 1, 0]):
+            g1 += 1
+        vg_num = g1 - 33
 
         lines = [""] * (22 + vg_num * 2)
         lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
@@ -331,11 +382,11 @@ class IVTransApp:
         lines[19 + vg_num] = f"[vgs,Ig(vds={vdd}),vbs=0.00000,ref_vs=0.00000]"
 
         for i in range(vg_num + 1):
-            row_idx = 33 + 1 + i
+            row_idx = 33 + i
             if row_idx < len(df_ibig):
-                v1 = df_ibig.iloc[row_idx, 0]
-                v5 = df_ibig.iloc[row_idx, 4]
-                v3 = df_ibig.iloc[row_idx, 2]
+                v1 = self.format_val(df_ibig.iloc[row_idx, 0])
+                v5 = self.format_val(df_ibig.iloc[row_idx, 4])
+                v3 = self.format_val(df_ibig.iloc[row_idx, 2])
                 lines[17 + i] = f"{v1},{v5}"
                 lines[20 + vg_num + i] = f"{v1},{v3}"
 
