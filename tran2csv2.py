@@ -7,69 +7,80 @@ from tkinter import ttk, filedialog, scrolledtext
 class SpecDataConverterApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("IC 資料轉檔綜合工具 (Part 1, 2, 3)")
-        self.root.geometry("820x680")
+        self.root.title("IC 數據自動轉檔整合工具 (Part 1, 2, 3)")
+        self.root.geometry("820x720")
         
-        # 共用變數
+        # 變數
         self.folder_path = tk.StringVar()
         self.processed_data_dict = {}
         
-        # 建立 UI 介面
+        # 建立 Grid 網格狀 UI 介面
         self.create_widgets()
         
     def create_widgets(self):
-        # 1. 路徑選取區塊
+        # 讓主視窗的欄位可以隨著視窗大小延展
+        self.root.columnconfigure(0, weight=1)
+        
+        # ==================== 1. 資料夾設定區 (Row 0) ====================
         frame_top = tk.LabelFrame(self.root, text=" 資料夾設定 ", padx=10, pady=10)
-        frame_top.pack(fill="x", padx=10, pady=10)
+        frame_top.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        frame_top.columnconfigure(1, weight=1)
         
         lbl_path = tk.Label(frame_top, text="指定資料夾:")
-        lbl_path.pack(side="left", padx=5)
+        lbl_path.grid(row=0, column=0, sticky="w", padx=5)
         
-        entry_path = tk.Entry(frame_top, textvariable=self.folder_path, width=60)
-        entry_path.pack(side="left", padx=5, expand=True, fill="x")
+        entry_path = tk.Entry(frame_top, textvariable=self.folder_path, width=50)
+        entry_path.grid(row=0, column=1, sticky="ew", padx=5)
         
-        btn_browse = tk.Button(frame_top, text="瀏覽...", command=self.browse_folder)
-        btn_browse.pack(side="left", padx=5)
+        btn_browse = tk.Button(frame_top, text="瀏覽...", command=self.browse_folder, width=10)
+        btn_browse.grid(row=0, column=2, padx=5)
         
-        # 2. 功能按鈕區塊 (Part 1: Spec Data)
-        frame_part1 = tk.LabelFrame(self.root, text=" Part 1: Spec Data 操作 ", padx=10, pady=8)
-        frame_part1.pack(fill="x", padx=10, pady=5)
+        # ==================== 2. 功能按鈕操作區 (Row 1 ~ 3) ====================
+        # Part 1: Spec Data
+        frame_part1 = tk.LabelFrame(self.root, text=" Part 1: Spec Data 操作 ", padx=10, pady=10)
+        frame_part1.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        frame_part1.columnconfigure((0, 1, 2), weight=1)
         
-        btn_step1 = tk.Button(frame_part1, text="spec Data", bg="#e1f5fe", width=16, command=self.run_spec_data)
-        btn_step1.pack(side="left", padx=5, expand=True)
+        btn_step1 = tk.Button(frame_part1, text="spec Data", bg="#e1f5fe", command=self.run_spec_data)
+        btn_step1.grid(row=0, column=0, sticky="ew", padx=5, ipady=4)
         
-        btn_step2_wi = tk.Button(frame_part1, text="SAVE Data (wi vtgm)", bg="#e8f5e9", width=18, command=self.run_save_wi_vtgm)
-        btn_step2_wi.pack(side="left", padx=5, expand=True)
+        btn_step2_wi = tk.Button(frame_part1, text="SAVE Data (wi vtgm)", bg="#e8f5e9", command=self.run_save_wi_vtgm)
+        btn_step2_wi.grid(row=0, column=1, sticky="ew", padx=5, ipady=4)
         
-        btn_step2_wo = tk.Button(frame_part1, text="SAVE Data (wo vtgm)", bg="#fff3e0", width=18, command=self.run_save_wo_vtgm)
-        btn_step2_wo.pack(side="left", padx=5, expand=True)
+        btn_step2_wo = tk.Button(frame_part1, text="SAVE Data (wo vtgm)", bg="#fff3e0", command=self.run_save_wo_vtgm)
+        btn_step2_wo.grid(row=0, column=2, sticky="ew", padx=5, ipady=4)
         
-        # 3. 功能按鈕區塊 (Part 2: HCI IV Data)
-        frame_part2 = tk.LabelFrame(self.root, text=" Part 2: HCI IV Data 操作 ", padx=10, pady=8)
-        frame_part2.pack(fill="x", padx=10, pady=5)
+        # Part 2: HCI IV Data
+        frame_part2 = tk.LabelFrame(self.root, text=" Part 2: HCI IV Data 操作 ", padx=10, pady=10)
+        frame_part2.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        frame_part2.columnconfigure((0, 1), weight=1)
         
-        btn_hci_trans = tk.Button(frame_part2, text="HCI IV Data", bg="#e1f5fe", width=22, command=self.run_hci_iv_trans)
-        btn_hci_trans.pack(side="left", padx=10, expand=True)
+        btn_hci_trans = tk.Button(frame_part2, text="HCI IV Data", bg="#e1f5fe", command=self.run_hci_iv_trans)
+        btn_hci_trans.grid(row=0, column=0, sticky="ew", padx=5, ipady=4)
         
-        btn_hci_save = tk.Button(frame_part2, text="SAVE IV Data", bg="#e8f5e9", width=22, command=self.run_save_iv_dat)
-        btn_hci_save.pack(side="left", padx=10, expand=True)
+        btn_hci_save = tk.Button(frame_part2, text="SAVE IV Data", bg="#e8f5e9", command=self.run_save_iv_dat)
+        btn_hci_save.grid(row=0, column=1, sticky="ew", padx=5, ipady=4)
 
-        # 4. 功能按鈕區塊 (Part 3: BTI IV Data)
-        frame_part3 = tk.LabelFrame(self.root, text=" Part 3: BTI IV Data 操作 ", padx=10, pady=8)
-        frame_part3.pack(fill="x", padx=10, pady=5)
+        # Part 3: BTI IV Data
+        frame_part3 = tk.LabelFrame(self.root, text=" Part 3: BTI IV Data 操作 ", padx=10, pady=10)
+        frame_part3.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
+        frame_part3.columnconfigure((0, 1), weight=1)
         
-        btn_bti_trans = tk.Button(frame_part3, text="BTI IV Data", bg="#e1f5fe", width=22, command=self.run_bti_iv_trans)
-        btn_bti_trans.pack(side="left", padx=10, expand=True)
+        btn_bti_trans = tk.Button(frame_part3, text="BTI IV Data", bg="#e1f5fe", command=self.run_bti_iv_trans)
+        btn_bti_trans.grid(row=0, column=0, sticky="ew", padx=5, ipady=4)
         
-        btn_bti_save = tk.Button(frame_part3, text="SAVE IV Data", bg="#e8f5e9", width=22, command=self.run_save_iv_dat)
-        btn_bti_save.pack(side="left", padx=10, expand=True)
+        btn_bti_save = tk.Button(frame_part3, text="SAVE IV Data", bg="#e8f5e9", command=self.run_save_iv_dat)
+        btn_bti_save.grid(row=0, column=1, sticky="ew", padx=5, ipady=4)
 
-        # 5. Log 訊息顯示區塊
+        # ==================== 3. Log 訊息顯示區 (Row 4) ====================
         frame_log = tk.LabelFrame(self.root, text=" 執行紀錄 (Log) ", padx=10, pady=10)
-        frame_log.pack(fill="both", expand=True, padx=10, pady=10)
+        frame_log.grid(row=4, column=0, sticky="nsew", padx=10, pady=5)
+        frame_log.rowconfigure(0, weight=1)
+        frame_log.columnconfigure(0, weight=1)
+        self.root.rowconfigure(4, weight=1)
         
-        self.log_text = scrolledtext.ScrolledText(frame_log, wrap=tk.WORD, height=12, bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 10))
-        self.log_text.pack(fill="both", expand=True)
+        self.log_text = scrolledtext.ScrolledText(frame_log, wrap=tk.WORD, bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 10))
+        self.log_text.grid(row=0, column=0, sticky="nsew")
         
     def log(self, message):
         """寫入 Log 訊息到介面"""
@@ -106,6 +117,29 @@ class SpecDataConverterApp:
             os.makedirs(results_folder)
         return folder
 
+    # ==================== 共用純文字寫入 (第三行空白、無引號) ====================
+    def save_to_dat_files(self):
+        if not self.processed_data_dict:
+            self.log("錯誤: 沒有可儲存的資料！")
+            return
+            
+        folder = self.folder_path.get()
+        results_folder = os.path.join(folder, "after_trans")
+        
+        self.log("開始清理空白列並儲存 .dat 檔案...")
+        for name, df in self.processed_data_dict.items():
+            df_cleaned = df.dropna(how='all').reset_index(drop=True)
+            out_path = os.path.join(results_folder, f"{name}.dat")
+            
+            with open(out_path, 'w', encoding='utf-8') as f:
+                for val in df_cleaned[0]:
+                    if pd.isna(val) or str(val).strip() == "":
+                        f.write("\n")
+                    else:
+                        f.write(f"{val}\n")
+            self.log(f"已儲存: {out_path}")
+        self.log("全部檔案儲存完成！")
+
     # ==================== Part 1 邏輯 ====================
     def run_spec_data(self):
         folder = self.check_folder()
@@ -114,7 +148,7 @@ class SpecDataConverterApp:
         self.log("開始執行 spec Data 轉檔...")
         file_list = glob.glob(os.path.join(folder, "*.xls*"))
         if not file_list:
-            self.log("警告: 指定資料夾中找不到任何 .xls 或 .xlsx 檔案！")
+            self.log("警告: 指定資料夾中找不到任何檔案！")
             return
             
         self.processed_data_dict = {} 
@@ -164,21 +198,7 @@ class SpecDataConverterApp:
         self.log("spec Data 執行完畢！")
 
     def run_save_wi_vtgm(self):
-        if not self.processed_data_dict:
-            self.log("錯誤: 沒有可儲存的資料！")
-            return
-        results_folder = os.path.join(self.folder_path.get(), "after_trans")
-        for name, df in self.processed_data_dict.items():
-            df_cleaned = df.dropna(how='all').reset_index(drop=True)
-            out_path = os.path.join(results_folder, f"{name}.dat")
-            with open(out_path, 'w', encoding='utf-8') as f:
-                for val in df_cleaned[0]:
-                    if pd.isna(val) or str(val).strip() == "":
-                        f.write("\n")
-                    else:
-                        f.write(f"{val}\n")
-            self.log(f"已儲存: {out_path}")
-        self.log("全部檔案儲存完成！")
+        self.save_to_dat_files()
 
     def run_save_wo_vtgm(self):
         if not self.processed_data_dict: return
@@ -187,9 +207,9 @@ class SpecDataConverterApp:
             if not match_idx.empty:
                 row_idx = match_idx[0]
                 self.processed_data_dict[name] = df.iloc[:row_idx].reset_index(drop=True)
-        self.run_save_wi_vtgm()
+        self.save_to_dat_files()
 
-    # ==================== Part 2: HCI IV Trans ====================
+    # ==================== Part 2: HCI IV Data 邏輯 ====================
     def run_hci_iv_trans(self):
         folder = self.check_folder()
         if not folder: return
@@ -214,7 +234,6 @@ class SpecDataConverterApp:
                 ws_idvd = pd.read_excel(file_path, sheet_name="IdVd_raw", header=None)
                 ws_param = pd.read_excel(file_path, sheet_name="Parameter", header=None) if "Parameter" in xls.sheet_names else None
                 
-                # 共用參數解析
                 W, L, T = ws1_fitting.iloc[8, 1], ws1_fitting.iloc[9, 1], ws1_fitting.iloc[7, 1]
                 vdlin, vdd = ws1_fitting.iloc[13, 1], ws1_fitting.iloc[12, 1]
                 vdstr, vgstr, vbstr = ws1_fitting.iloc[3, 1], ws1_fitting.iloc[2, 1], ws1_fitting.iloc[5, 1]
@@ -223,21 +242,23 @@ class SpecDataConverterApp:
                 a_str = f"Instance{{W={W},L={L},T={T}}}"
                 b_str = f"DataType{{{mos_type}}}"
                 
-                # 1. 產生 t0
-                df_t0 = self._build_hci_t0(ws1_fitting, ws_idvg, ws_idvd, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr)
-                self.processed_data_dict[f"{prefix}_IV_t0"] = df_t0
+                # 1. hci_IV_t0
+                self.processed_data_dict[f"{prefix}_IV_t0"] = self._build_hci_t0(
+                    ws_idvg, ws_idvd, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
+                )
                 
-                # 2. 產生 final stress
+                # 2. hci_iv_final_stress
                 if ws_param is not None:
-                    df_final = self._build_hci_final(ws1_fitting, ws_idvg, ws_idvd, ws_param, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr)
-                    self.processed_data_dict[f"{prefix}_IV_filnal_stress"] = df_final
+                    self.processed_data_dict[f"{prefix}_IV_filnal_stress"] = self._build_hci_final(
+                        ws_idvg, ws_idvd, ws_param, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
+                    )
                     
                 self.log(f"  -> HCI 處理成功: {prefix}")
             except Exception as e:
                 self.log(f"  -> HCI 處理 {filename} 錯誤: {str(e)}")
         self.log("HCI IV Data 轉檔完畢！可點擊 SAVE IV Data 輸出。")
 
-    def _build_hci_t0(self, ws_fit, ws_idvg, ws_idvd, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
+    def _build_hci_t0(self, ws_idvg, ws_idvd, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
         time_str = "0"
         c = f"[vgs,Id(vbs=0.00000),vds={vdlin},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
@@ -253,8 +274,6 @@ class SpecDataConverterApp:
             "MeasurementSetup{PDA}", "Input{vgs,vbs,vds}", "Output{Id,Isub}",
             "{MOS_Id_Vgs_Vbs_DC}", c
         ]
-        df = pd.DataFrame({0: headers})
-        # 補齊列數並填入資料
         rows = [""] * (26 + num * 2 + num2 + 5)
         for idx, h in enumerate(headers): rows[idx] = h
         
@@ -270,7 +289,7 @@ class SpecDataConverterApp:
             rows[25 + num * 2 + j] = f"{ws_idvd.iloc[17 + j, 0]},{ws_idvd.iloc[17 + j, 1]}"
         return pd.DataFrame({0: rows})
 
-    def _build_hci_final(self, ws_fit, ws_idvg, ws_idvd, ws_param, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
+    def _build_hci_final(self, ws_idvg, ws_idvd, ws_param, a, b, vdlin, vdd, vdstr, vgstr, vbstr):
         tstress_row = ws_param[ws_param.apply(lambda row: row.astype(str).str.contains("Tstress").any(), axis=1)]
         if tstress_row.empty:
             time_str = "0"
@@ -310,7 +329,7 @@ class SpecDataConverterApp:
             rows[25 + num * 2 + j] = f"{ws_idvd.iloc[num4 + j, 0]},{ws_idvd.iloc[num4 + j, 1]}"
         return pd.DataFrame({0: rows})
 
-    # ==================== Part 3: BTI IV Trans ====================
+    # ==================== Part 3: BTI IV Data 邏輯 ====================
     def run_bti_iv_trans(self):
         folder = self.check_folder()
         if not folder: return
@@ -343,14 +362,16 @@ class SpecDataConverterApp:
                 a_str = f"Instance{{W={W},L={L},T={T}}}"
                 b_str = f"DataType{{{mos_type}}}"
                 
-                # 1. BTI t0
-                df_t0 = self._build_bti_t0(ws_vtlin, ws_vtsat, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr)
-                self.processed_data_dict[f"{prefix}_IV_t0"] = df_t0
+                # 1. BTI_IV_t0
+                self.processed_data_dict[f"{prefix}_IV_t0"] = self._build_bti_t0(
+                    ws_vtlin, ws_vtsat, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
+                )
                 
-                # 2. BTI final stress
+                # 2. BTI_IV_final_stress
                 if ws_single is not None:
-                    df_final = self._build_bti_final(ws_vtlin, ws_vtsat, ws_single, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr)
-                    self.processed_data_dict[f"{prefix}_IV_filnal_stress"] = df_final
+                    self.processed_data_dict[f"{prefix}_IV_filnal_stress"] = self._build_bti_final(
+                        ws_vtlin, ws_vtsat, ws_single, a_str, b_str, vdlin, vdd, vdstr, vgstr, vbstr
+                    )
                     
                 self.log(f"  -> BTI 處理成功: {prefix}")
             except Exception as e:
@@ -391,7 +412,6 @@ class SpecDataConverterApp:
         
         num = ws_vtlin.iloc[13:, 0].dropna().index[-1] + 1 - 13
         
-        # 尋找 "Vg(V)" 所在的列索引作為開頭
         match_lin = ws_vtlin[ws_vtlin.apply(lambda row: row.astype(str).str.contains("Vg\(V\)").any(), axis=1)]
         g4 = match_lin.index[0] if not match_lin.empty else 0
         
@@ -416,30 +436,9 @@ class SpecDataConverterApp:
             rows[20 + num + i] = f"{ws_vtsat.iloc[g5 + 1 + i, 0]},{ws_vtsat.iloc[g5 + 1 + i, 1]}"
         return pd.DataFrame({0: rows})
 
-    # ==================== 共用存檔邏輯 (SAVE_IV_dat) ====================
+    # ==================== 共用 SAVE_IV_dat ====================
     def run_save_iv_dat(self):
-        """對應 Part 2 與 Part 3 共用的 SAVE_IV_dat"""
-        if not self.processed_data_dict:
-            self.log("錯誤: 沒有可儲存的 IV 資料，請先執行 HCI 或 BTI 轉檔！")
-            return
-            
-        folder = self.folder_path.get()
-        results_folder = os.path.join(folder, "after_trans")
-        
-        self.log("開始輸出 IV .dat 檔案...")
-        for name, df in self.processed_data_dict.items():
-            df_cleaned = df.dropna(how='all').reset_index(drop=True)
-            out_path = os.path.join(results_folder, f"{name}.dat")
-            
-            with open(out_path, 'w', encoding='utf-8') as f:
-                for val in df_cleaned[0]:
-                    if pd.isna(val) or str(val).strip() == "":
-                        f.write("\n")
-                    else:
-                        f.write(f"{val}\n")
-            self.log(f"已儲存 IV 檔案: {out_path}")
-            
-        self.log("全部 IV 檔案儲存完成！")
+        self.save_to_dat_files()
 
 if __name__ == "__main__":
     root = tk.Tk()
