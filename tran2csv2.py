@@ -68,19 +68,11 @@ class IVTransApp:
             self.log("-" * 50)
 
     def format_val(self, val):
-        """將數值轉換為字串，強制避免科學記號 e"""
+        """直接以文字型態回傳原始數值，不進行四捨五入或格式化轉換"""
         if pd.isna(val):
-            return "0.000000"
-        try:
-            f_val = float(val)
-            # 若為整數或浮點數，轉為一般小數點表示法，避免科學記號
-            if f_val.is_integer():
-                return str(int(f_val))
-            else:
-                # 預留足夠小數點位數，可依需求調整
-                return f"{f_val:.6f}".rstrip('0').rstrip('.') if '.' in f"{f_val:.6f}" else f"{f_val:.6f}"
-        except ValueError:
-            return str(val)
+            return ""
+        # 如果是數值，轉為字串直接保留其原始格式（一般數值或科學記號皆可保留）
+        return str(val).strip()
 
     def run_hci_trans(self):
         """執行 HCI IV DATA 轉檔邏輯"""
@@ -127,10 +119,11 @@ class IVTransApp:
                     else:
                         raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req} (找不到對應的分頁)")
 
-                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None)
-                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None)
-                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None)
-                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None)
+                # 讀取時加上 dtype=str 確保全部以文字型態讀入，保留原始風貌
+                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None, dtype=str)
+                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None, dtype=str)
+                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None, dtype=str)
+                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None, dtype=str)
 
                 # 剖析檔名以建立新工作表名稱
                 sp1 = source_file.split("_")
@@ -158,8 +151,8 @@ class IVTransApp:
                 con1_lower_map = {s.lower(): s for s in xls_con1.sheet_names}
                 
                 if "ibig_vg" in con1_lower_map and "model team fitting data" in con1_lower_map:
-                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None)
-                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None)
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None, dtype=str)
+                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None, dtype=str)
                     lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
                     self.trans_results["isub_igate"] = lines_isub
 
@@ -171,7 +164,6 @@ class IVTransApp:
             messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
     def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
-        # 參數讀取 (對應 VBA Excel row - 1)
         w = self.format_val(df_fitting.iloc[8, 1])
         l_val = self.format_val(df_fitting.iloc[9, 1])
         t_val = self.format_val(df_fitting.iloc[7, 1])
@@ -182,7 +174,12 @@ class IVTransApp:
         vbstr = self.format_val(df_fitting.iloc[5, 1])
         time_str = "0"
 
-        mos_type = "NMOS" if float(df_fitting.iloc[2, 1]) > 0 else "PMOS"
+        # 判斷 NMOS / PMOS
+        try:
+            mos_val = float(df_fitting.iloc[2, 1])
+            mos_type = "NMOS" if mos_val > 0 else "PMOS"
+        except:
+            mos_type = "NMOS"
 
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
@@ -190,16 +187,13 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        # 對應 VBA: G1 = Cells(15,2).End(xlDown).Row -> num = G1 - 15 (Python index 14 為 Excel 第 15 列)
-        # 尋找 IdVg_raw 第 2 欄有資料的最末列
         g1 = 14
-        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g1 + 1, 1]):
+        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g1 + 1, 1]) and str(df_idvg.iloc[g1 + 1, 1]).strip() != "":
             g1 += 1
         num = g1 - 14
 
-        # 對應 VBA: G2 = Cells(18,2).End(xlDown).Row -> num2 = G2 - 18 (Python index 17 為 Excel 第 18 列)
         g2 = 17
-        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g2 + 1, 1]):
+        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g2 + 1, 1]) and str(df_idvd.iloc[g2 + 1, 1]).strip() != "":
             g2 += 1
         num2 = g2 - 17
 
@@ -268,13 +262,20 @@ class IVTransApp:
             raise ValueError("Parameter sheet 找不到 'Tstress'")
 
         g3 = tstress_row
-        while g3 + 1 < len(df_param) and pd.notna(df_param.iloc[g3 + 1, 0]):
+        while g3 + 1 < len(df_param) and pd.notna(df_param.iloc[g3 + 1, 0]) and str(df_param.iloc[g3 + 1, 0]).strip() != "":
             g3 += 1
         
-        raw_time = float(df_param.iloc[g3, 0])
-        time_str = self.format_val(raw_time / 60)
+        try:
+            raw_time = float(df_param.iloc[g3, 0])
+            time_str = str(raw_time / 60)
+        except:
+            time_str = self.format_val(df_param.iloc[g3, 0])
 
-        mos_type = "NMOS" if float(df_fitting.iloc[2, 1]) > 0 else "PMOS"
+        try:
+            mos_val = float(df_fitting.iloc[2, 1])
+            mos_type = "NMOS" if mos_val > 0 else "PMOS"
+        except:
+            mos_type = "NMOS"
 
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
@@ -282,25 +283,23 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        # 對應 VBA 邏輯計算區段長度
         g1 = 14
-        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g1 + 1, 1]):
+        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g1 + 1, 1]) and str(df_idvg.iloc[g1 + 1, 1]).strip() != "":
             g1 += 1
         num = g1 - 14
 
         g2 = 17
-        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g2 + 1, 1]):
+        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g2 + 1, 1]) and str(df_idvd.iloc[g2 + 1, 1]).strip() != "":
             g2 += 1
         num2 = g2 - 17
 
-        # G4 = Cells(1,1).End(xlDown).Row -> num3 = G4 - num
         g4 = 0
-        while g4 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g4 + 1, 0]):
+        while g4 + 1 < len(df_idvg) and pd.notna(df_idvg.iloc[g4 + 1, 0]) and str(df_idvg.iloc[g4 + 1, 0]).strip() != "":
             g4 += 1
         num3 = max(0, g4 - num)
 
         g5 = 0
-        while g5 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g5 + 1, 0]):
+        while g5 + 1 < len(df_idvd) and pd.notna(df_idvd.iloc[g5 + 1, 0]) and str(df_idvd.iloc[g5 + 1, 0]).strip() != "":
             g5 += 1
         num4 = max(0, g5 - num2)
 
@@ -350,14 +349,18 @@ class IVTransApp:
         l_val = self.format_val(df_fitting.iloc[9, 1])
         t_val = self.format_val(df_fitting.iloc[7, 1])
         vdd = self.format_val(df_ibig.iloc[2, 1])
-        mos_type = "NMOS" if float(df_fitting.iloc[2, 1]) > 0 else "PMOS"
+        
+        try:
+            mos_val = float(df_fitting.iloc[2, 1])
+            mos_type = "NMOS" if mos_val > 0 else "PMOS"
+        except:
+            mos_type = "NMOS"
 
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
 
-        # G1 = Cells(33, 1).End(xlDown).Row -> vg_num = G1 - 34 (Python index 33 為 Excel 第 34 列)
         g1 = 33
-        while g1 + 1 < len(df_ibig) and pd.notna(df_ibig.iloc[g1 + 1, 0]):
+        while g1 + 1 < len(df_ibig) and pd.notna(df_ibig.iloc[g1 + 1, 0]) and str(df_ibig.iloc[g1 + 1, 0]).strip() != "":
             g1 += 1
         vg_num = g1 - 33
 
