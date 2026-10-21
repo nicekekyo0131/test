@@ -1,6 +1,5 @@
 import os
 import glob
-import re
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
@@ -61,7 +60,7 @@ class IVTransApp:
             self.path_entry.insert(0, folder_selected)
             self.log(f"已選擇資料夾: {folder_selected}")
             
-            # 列出資料夾內有哪些檔案 (需求 2)
+            # 列出資料夾內有哪些檔案
             files = os.listdir(folder_selected)
             self.log(f"--- 該資料夾內容清單 ({len(files)} 個項目) ---")
             for f in files:
@@ -78,7 +77,7 @@ class IVTransApp:
         self.log("=== 開始執行 HCI IV DATA 轉檔 ===")
         self.trans_results.clear()
 
-        # 搜尋指定資料夾底下的所有 excel 檔案 (.xls, .xlsx, .xlsm)
+        # 搜尋指定資料夾底下的所有 excel 檔案
         search_pattern = os.path.join(target_dir, "*.[xlX][lsL]*")
         raw_files = [f for f in glob.glob(search_pattern) if not os.path.basename(f).startswith("~$")]
 
@@ -94,29 +93,31 @@ class IVTransApp:
             results_folder = os.path.join(target_dir, "after_trans")
             os.makedirs(results_folder, exist_ok=True)
 
-            # 尋找包含 con1_ 的檔案來製作 isub_igate
             con1_file = None
 
             for file_path in raw_files:
                 source_file = os.path.basename(file_path)
-                self.log(filename_msg := f"正在處理檔案: {source_file}")
+                self.log(f"正在處理檔案: {source_file}")
 
-                # 讀取 Excel 中的各個分頁 (Sheet)
+                # 讀取 Excel 分頁並建立不分大小寫的對應字典
                 xls = pd.ExcelFile(file_path)
-                sheet_names = xls.sheet_names
+                sheet_lower_map = {s.lower(): s for s in xls.sheet_names}
 
-                # 檢查必要的工作表是否存在
                 required_sheets = ["Model team Fitting data", "IdVg_raw", "IdVd_raw", "Parameter"]
+                real_sheets = {}
                 for req in required_sheets:
-                    if req not in sheet_names:
-                        raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
+                    req_lower = req.lower()
+                    if req_lower in sheet_lower_map:
+                        real_sheets[req] = sheet_lower_map[req_lower]
+                    else:
+                        raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req} (找不到對應的分頁)")
 
-                df_fitting = pd.read_excel(file_path, sheet_name="Model team Fitting data", header=None)
-                df_idvg = pd.read_excel(file_path, sheet_name="IdVg_raw", header=None)
-                df_idvd = pd.read_excel(file_path, sheet_name="IdVd_raw", header=None)
-                df_param = pd.read_excel(file_path, sheet_name="Parameter", header=None)
+                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None)
+                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None)
+                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None)
+                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None)
 
-                # 剖析檔名以建立新工作表名稱 (例如: prefix1_prefix2_IV_t0)
+                # 剖析檔名以建立新工作表名稱
                 sp1 = source_file.split("_")
                 if len(sp1) >= 2:
                     newname = f"{sp1[0]}_{sp1[1]}_IV_t0"
@@ -129,7 +130,6 @@ class IVTransApp:
                 lines_t0 = self.hci_IV_t0(df_fitting, df_idvg, df_idvd)
                 lines_final = self.hci_iv_final_stress(df_fitting, df_idvg, df_idvd, df_param)
 
-                # 暫存轉換後的文字行，準備供 SAVE 使用
                 self.trans_results[newname] = lines_t0
                 self.trans_results[newname2] = lines_final
 
@@ -140,9 +140,11 @@ class IVTransApp:
             if con1_file:
                 self.log(f"發現包含 con1_ 的檔案: {os.path.basename(con1_file)}，正在產生 isub_igate...")
                 xls_con1 = pd.ExcelFile(con1_file)
-                if "IBIG_VG" in xls_con1.sheet_names:
-                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name="Model team Fitting data", header=None)
-                    df_ibig = pd.read_excel(con1_file, sheet_name="IBIG_VG", header=None)
+                con1_lower_map = {s.lower(): s for s in xls_con1.sheet_names}
+                
+                if "ibig_vg" in con1_lower_map and "model team fitting data" in con1_lower_map:
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None)
+                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None)
                     lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
                     self.trans_results["isub_igate"] = lines_isub
 
@@ -154,7 +156,6 @@ class IVTransApp:
             messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
     def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
-        """對應 VBA 的 hci_IV_t0 邏輯"""
         w = df_fitting.iloc[8, 1]
         l_val = df_fitting.iloc[9, 1]
         t_val = df_fitting.iloc[7, 1]
@@ -173,7 +174,6 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        # Python index 從 0 開始，對應 Excel 第 15 列 (index 14)
         num = len(df_idvg) - 14
         num2 = len(df_idvd) - 17
 
@@ -217,7 +217,6 @@ class IVTransApp:
         return [line for line in lines if line is not None]
 
     def hci_iv_final_stress(self, df_fitting, df_idvg, df_idvd, df_param):
-        """對應 VBA 的 hci_iv_final_stress 邏輯"""
         w = df_fitting.iloc[8, 1]
         l_val = df_fitting.iloc[9, 1]
         t_val = df_fitting.iloc[7, 1]
@@ -227,11 +226,11 @@ class IVTransApp:
         vgstr = df_fitting.iloc[2, 1]
         vbstr = df_fitting.iloc[5, 1]
 
-        # 尋找 Parameter sheet 中的 Tstress
+        # 尋找 Parameter sheet 中的 Tstress (不分大小寫)
         tstress_row = None
         for r_idx, row in df_param.iterrows():
             for c_idx, val in enumerate(row):
-                if val == "Tstress":
+                if val and str(val).strip().lower() == "tstress":
                     tstress_row = r_idx
                     break
             if tstress_row is not None:
@@ -240,7 +239,6 @@ class IVTransApp:
         if tstress_row is None:
             raise ValueError("Parameter sheet 找不到 'Tstress'")
 
-        # 往下找資料列
         g3 = tstress_row
         while g3 + 1 < len(df_param) and pd.notna(df_param.iloc[g3 + 1, 0]):
             g3 += 1
@@ -256,7 +254,6 @@ class IVTransApp:
 
         num = len(df_idvg) - 15
         num2 = len(df_idvd) - 18
-        # 對應 VBA 尋找區段
         num3 = max(0, len(df_idvg) - num)
         num4 = max(0, len(df_idvd) - num2)
 
@@ -302,7 +299,6 @@ class IVTransApp:
         return [line for line in lines if line is not None]
 
     def isub_igate_iv(self, df_fitting, df_ibig):
-        """對應 VBA 的 ISUB_IGATE_IV 邏輯"""
         w = df_fitting.iloc[8, 1]
         l_val = df_fitting.iloc[9, 1]
         t_val = df_fitting.iloc[7, 1]
