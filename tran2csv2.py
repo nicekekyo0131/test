@@ -1,6 +1,6 @@
 import os
 import glob
-import openpyxl
+import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
@@ -67,12 +67,14 @@ class IVTransApp:
                 self.log(f"  • {f}")
             self.log("-" * 50)
 
-    def get_cell_val(self, sheet, row, col):
-        """直接從 openpyxl 取得儲存格的值，轉為字串並保持原貌（不進行任何數值轉型）"""
-        val = sheet.cell(row=row, column=col).value
-        if val is None:
-            return ""
-        return str(val).strip()
+    def get_val(self, df, row_idx, col_idx):
+        """從 DataFrame 安全取得指定位置的值（row_idx 與 col_idx 從 0 開始算）"""
+        if row_idx < len(df) and col_idx < len(df.columns):
+            val = df.iat[row_idx, col_idx]
+            if pd.isna(val):
+                return ""
+            return str(val).strip()
+        return ""
 
     def run_hci_trans(self):
         """執行 HCI IV DATA 轉檔邏輯"""
@@ -104,9 +106,9 @@ class IVTransApp:
                 source_file = os.path.basename(file_path)
                 self.log(f"正在處理檔案: {source_file}")
 
-                # 使用 openpyxl 直接讀取活頁簿（保留原始格式與大小寫分頁對應）
-                wb = openpyxl.load_workbook(file_path, data_only=True)
-                sheet_lower_map = {s.lower(): s for s in wb.sheetnames}
+                # 使用 pandas 快速讀取所有分頁，並強制指定 dtype=str 保留原始字態與科學記號
+                xls = pd.ExcelFile(file_path)
+                sheet_lower_map = {s.lower(): s for s in xls.sheet_names}
 
                 required_sheets = ["Model team Fitting data", "IdVg_raw", "IdVd_raw", "Parameter"]
                 real_sheets = {}
@@ -117,10 +119,10 @@ class IVTransApp:
                     else:
                         raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
 
-                ws_fitting = wb[real_sheets["Model team Fitting data"]]
-                ws_idvg = wb[real_sheets["IdVg_raw"]]
-                ws_idvd = wb[real_sheets["IdVd_raw"]]
-                ws_param = wb[real_sheets["Parameter"]]
+                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None, dtype=str)
+                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None, dtype=str)
+                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None, dtype=str)
+                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None, dtype=str)
 
                 sp1 = source_file.split("_")
                 if len(sp1) >= 2:
@@ -130,8 +132,8 @@ class IVTransApp:
                     newname = f"{sp1[0]}_IV_t0"
                     newname2 = f"{sp1[0]}_IV_filnal_stress"
 
-                lines_t0 = self.hci_IV_t0(ws_fitting, ws_idvg, ws_idvd)
-                lines_final = self.hci_iv_final_stress(ws_fitting, ws_idvg, ws_idvd, ws_param)
+                lines_t0 = self.hci_IV_t0(df_fitting, df_idvg, df_idvd)
+                lines_final = self.hci_iv_final_stress(df_fitting, df_idvg, df_idvd, df_param)
 
                 self.trans_results[newname] = lines_t0
                 self.trans_results[newname2] = lines_final
@@ -141,13 +143,13 @@ class IVTransApp:
 
             if con1_file:
                 self.log(f"發現包含 con1_ 的檔案: {os.path.basename(con1_file)}，正在產生 isub_igate...")
-                wb_con1 = openpyxl.load_workbook(con1_file, data_only=True)
-                con1_lower_map = {s.lower(): s for s in wb_con1.sheetnames}
+                xls_con1 = pd.ExcelFile(con1_file)
+                con1_lower_map = {s.lower(): s for s in xls_con1.sheet_names}
                 
                 if "ibig_vg" in con1_lower_map and "model team fitting data" in con1_lower_map:
-                    ws_fitting_c1 = wb_con1[con1_lower_map["model team fitting data"]]
-                    ws_ibig = wb_con1[con1_lower_map["ibig_vg"]]
-                    lines_isub = self.isub_igate_iv(ws_fitting_c1, ws_ibig)
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None, dtype=str)
+                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None, dtype=str)
+                    lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
                     self.trans_results["isub_igate"] = lines_isub
 
             self.log("=== HCI IV DATA 轉檔完成！ ===")
@@ -157,20 +159,20 @@ class IVTransApp:
             self.log(f"轉檔過程發生錯誤: {str(e)}")
             messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
-    def hci_IV_t0(self, ws_fitting, ws_idvg, ws_idvd):
-        # openpyxl 的 row/col 從 1 開始計算 (對應 VBA row/col)
-        w = self.get_cell_val(ws_fitting, 9, 2)
-        l_val = self.get_cell_val(ws_fitting, 10, 2)
-        t_val = self.get_cell_val(ws_fitting, 8, 2)
-        vdlin = self.get_cell_val(ws_fitting, 14, 2)
-        vdd = self.get_cell_val(ws_fitting, 13, 2)
-        vdstr = self.get_cell_val(ws_fitting, 4, 2)
-        vgstr = self.get_cell_val(ws_fitting, 3, 2)
-        vbstr = self.get_cell_val(ws_fitting, 6, 2)
+    def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
+        # 索引對應：Excel row 9 -> index 8, col 2 -> index 1
+        w = self.get_val(df_fitting, 8, 1)
+        l_val = self.get_val(df_fitting, 9, 1)
+        t_val = self.get_val(df_fitting, 7, 1)
+        vdlin = self.get_val(df_fitting, 13, 1)
+        vdd = self.get_val(df_fitting, 12, 1)
+        vdstr = self.get_val(df_fitting, 3, 1)
+        vgstr = self.get_val(df_fitting, 2, 1)
+        vbstr = self.get_val(df_fitting, 5, 1)
         time_str = "0"
 
         try:
-            mos_val = float(ws_fitting.cell(row=3, column=2).value or 0)
+            mos_val = float(df_fitting.iat[2, 1])
             mos_type = "NMOS" if mos_val > 0 else "PMOS"
         except:
             mos_type = "NMOS"
@@ -181,16 +183,16 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        # 對應 VBA: G1 = Cells(15,2).End(xlDown).Row -> num = G1 - 15
-        g1 = 15
-        while g1 + 1 <= ws_idvg.max_row and ws_idvg.cell(row=g1 + 1, column=2).value is not None and str(ws_idvg.cell(row=g1 + 1, column=2).value).strip() != "":
+        # 對應 VBA: G1 = Cells(15,2).End(xlDown).Row -> num = G1 - 15 (index 14 為 Excel 第 15 列)
+        g1 = 14
+        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iat[g1 + 1, 1]) and str(df_idvg.iat[g1 + 1, 1]).strip() != "":
             g1 += 1
-        num = g1 - 15
+        num = g1 - 14
 
-        g2 = 18
-        while g2 + 1 <= ws_idvd.max_row and ws_idvd.cell(row=g2 + 1, column=2).value is not None and str(ws_idvd.cell(row=g2 + 1, column=2).value).strip() != "":
+        g2 = 17
+        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iat[g2 + 1, 1]) and str(df_idvd.iat[g2 + 1, 1]).strip() != "":
             g2 += 1
-        num2 = g2 - 18
+        num2 = g2 - 17
 
         lines = [""] * (26 + 2 * num + num2)
         lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
@@ -216,38 +218,36 @@ class IVTransApp:
         lines[24 + 2 * num] = e
 
         for i in range(num + 1):
-            row_idx = 15 + i
-            v1 = self.get_cell_val(ws_idvg, row_idx, 1)
-            v2 = self.get_cell_val(ws_idvg, row_idx, 2)
-            v4 = self.get_cell_val(ws_idvg, row_idx, 4)
+            row_idx = 14 + i
+            v1 = self.get_val(df_idvg, row_idx, 0)
+            v2 = self.get_val(df_idvg, row_idx, 1)
+            v4 = self.get_val(df_idvg, row_idx, 3)
             lines[17 + i] = f"{v1},{v2}"
             lines[20 + num + i] = f"{v1},{v4}"
 
         for j in range(num2 + 1):
-            row_idx = 18 + j
-            v1 = self.get_cell_val(ws_idvd, row_idx, 1)
-            v2 = self.get_cell_val(ws_idvd, row_idx, 2)
+            row_idx = 17 + j
+            v1 = self.get_val(df_idvd, row_idx, 0)
+            v2 = self.get_val(df_idvd, row_idx, 1)
             lines[25 + 2 * num + j] = f"{v1},{v2}"
 
         return [line for line in lines if line is not None]
 
-    def hci_iv_final_stress(self, ws_fitting, ws_idvg, ws_idvd, ws_param):
-        w = self.get_cell_val(ws_fitting, 9, 2)
-        l_val = self.get_cell_val(ws_fitting, 10, 2)
-        t_val = self.get_cell_val(ws_fitting, 8, 2)
-        vdlin = self.get_cell_val(ws_fitting, 14, 2)
-        vdd = self.get_cell_val(ws_fitting, 13, 2)
-        vdstr = self.get_cell_val(ws_fitting, 4, 2)
-        vgstr = self.get_cell_val(ws_fitting, 3, 2)
-        vbstr = self.get_cell_val(ws_fitting, 6, 2)
+    def hci_iv_final_stress(self, df_fitting, df_idvg, df_idvd, df_param):
+        w = self.get_val(df_fitting, 8, 1)
+        l_val = self.get_val(df_fitting, 9, 1)
+        t_val = self.get_val(df_fitting, 7, 1)
+        vdlin = self.get_val(df_fitting, 13, 1)
+        vdd = self.get_val(df_fitting, 12, 1)
+        vdstr = self.get_val(df_fitting, 3, 1)
+        vgstr = self.get_val(df_fitting, 2, 1)
+        vbstr = self.get_val(df_fitting, 5, 1)
 
-        # 尋找 Parameter sheet 中的 Tstress
         tstress_row = None
-        for r in range(1, ws_param.max_row + 1):
-            for c in range(1, ws_param.max_column + 1):
-                val = ws_param.cell(row=r, column=c).value
+        for r_idx, row in df_param.iterrows():
+            for c_idx, val in enumerate(row):
                 if val and str(val).strip().lower() == "tstress":
-                    tstress_row = r
+                    tstress_row = r_idx
                     break
             if tstress_row is not None:
                 break
@@ -256,17 +256,17 @@ class IVTransApp:
             raise ValueError("Parameter sheet 找不到 'Tstress'")
 
         g3 = tstress_row
-        while g3 + 1 <= ws_param.max_row and ws_param.cell(row=g3 + 1, column=1).value is not None and str(ws_param.cell(row=g3 + 1, column=1).value).strip() != "":
+        while g3 + 1 < len(df_param) and pd.notna(df_param.iat[g3 + 1, 0]) and str(df_param.iat[g3 + 1, 0]).strip() != "":
             g3 += 1
         
         try:
-            raw_time = float(ws_param.cell(row=g3, column=1).value or 0)
+            raw_time = float(df_param.iat[g3, 0])
             time_str = str(raw_time / 60)
         except:
-            time_str = self.get_cell_val(ws_param, g3, 1)
+            time_str = self.get_val(df_param, g3, 0)
 
         try:
-            mos_val = float(ws_fitting.cell(row=3, column=2).value or 0)
+            mos_val = float(df_fitting.iat[2, 1])
             mos_type = "NMOS" if mos_val > 0 else "PMOS"
         except:
             mos_type = "NMOS"
@@ -277,23 +277,23 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        g1 = 15
-        while g1 + 1 <= ws_idvg.max_row and ws_idvg.cell(row=g1 + 1, column=2).value is not None and str(ws_idvg.cell(row=g1 + 1, column=2).value).strip() != "":
+        g1 = 14
+        while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iat[g1 + 1, 1]) and str(df_idvg.iat[g1 + 1, 1]).strip() != "":
             g1 += 1
-        num = g1 - 15
+        num = g1 - 14
 
-        g2 = 18
-        while g2 + 1 <= ws_idvd.max_row and ws_idvd.cell(row=g2 + 1, column=2).value is not None and str(ws_idvd.cell(row=g2 + 1, column=2).value).strip() != "":
+        g2 = 17
+        while g2 + 1 < len(df_idvd) and pd.notna(df_idvd.iat[g2 + 1, 1]) and str(df_idvd.iat[g2 + 1, 1]).strip() != "":
             g2 += 1
-        num2 = g2 - 18
+        num2 = g2 - 17
 
-        g4 = 1
-        while g4 + 1 <= ws_idvg.max_row and ws_idvg.cell(row=g4 + 1, column=1).value is not None and str(ws_idvg.cell(row=g4 + 1, column=1).value).strip() != "":
+        g4 = 0
+        while g4 + 1 < len(df_idvg) and pd.notna(df_idvg.iat[g4 + 1, 0]) and str(df_idvg.iat[g4 + 1, 0]).strip() != "":
             g4 += 1
         num3 = max(0, g4 - num)
 
-        g5 = 1
-        while g5 + 1 <= ws_idvd.max_row and ws_idvd.cell(row=g5 + 1, column=1).value is not None and str(ws_idvd.cell(row=g5 + 1, column=1).value).strip() != "":
+        g5 = 0
+        while g5 + 1 < len(df_idvd) and pd.notna(df_idvd.iat[g5 + 1, 0]) and str(df_idvd.iat[g5 + 1, 0]).strip() != "":
             g5 += 1
         num4 = max(0, g5 - num2)
 
@@ -322,28 +322,28 @@ class IVTransApp:
 
         for i in range(num + 1):
             target_idx = num3 + i
-            v1 = self.get_cell_val(ws_idvg, target_idx, 1)
-            v2 = self.get_cell_val(ws_idvg, target_idx, 2)
-            v4 = self.get_cell_val(ws_idvg, target_idx, 4)
+            v1 = self.get_val(df_idvg, target_idx, 0)
+            v2 = self.get_val(df_idvg, target_idx, 1)
+            v4 = self.get_val(df_idvg, target_idx, 3)
             lines[17 + i] = f"{v1},{v2}"
             lines[20 + num + i] = f"{v1},{v4}"
 
         for j in range(num2 + 1):
             target_idx = num4 + j
-            v1 = self.get_cell_val(ws_idvd, target_idx, 1)
-            v2 = self.get_cell_val(ws_idvd, target_idx, 2)
+            v1 = self.get_val(df_idvd, target_idx, 0)
+            v2 = self.get_val(df_idvd, target_idx, 1)
             lines[25 + 2 * num + j] = f"{v1},{v2}"
 
         return [line for line in lines if line is not None]
 
-    def isub_igate_iv(self, ws_fitting, ws_ibig):
-        w = self.get_cell_val(ws_fitting, 9, 2)
-        l_val = self.get_cell_val(ws_fitting, 10, 2)
-        t_val = self.get_cell_val(ws_fitting, 8, 2)
-        vdd = self.get_cell_val(ws_ibig, 3, 2)
+    def isub_igate_iv(self, df_fitting, df_ibig):
+        w = self.get_val(df_fitting, 8, 1)
+        l_val = self.get_val(df_fitting, 9, 1)
+        t_val = self.get_val(df_fitting, 7, 1)
+        vdd = self.get_val(df_ibig, 2, 1)
         
         try:
-            mos_val = float(ws_fitting.cell(row=3, column=2).value or 0)
+            mos_val = float(df_fitting.iat[2, 1])
             mos_type = "NMOS" if mos_val > 0 else "PMOS"
         except:
             mos_type = "NMOS"
@@ -351,10 +351,10 @@ class IVTransApp:
         a = f"Instance{{W={w},L={l_val},T={t_val}}}"
         b = f"DataType{{{mos_type}}}"
 
-        g1 = 34
-        while g1 + 1 <= ws_ibig.max_row and ws_ibig.cell(row=g1 + 1, column=1).value is not None and str(ws_ibig.cell(row=g1 + 1, column=1).value).strip() != "":
+        g1 = 33
+        while g1 + 1 < len(df_ibig) and pd.notna(df_ibig.iat[g1 + 1, 0]) and str(df_ibig.iat[g1 + 1, 0]).strip() != "":
             g1 += 1
-        vg_num = g1 - 34
+        vg_num = g1 - 33
 
         lines = [""] * (22 + vg_num * 2)
         lines[0] = "//Copyright (C) 2010-2020 Primarius Technologies Co., Ltd"
@@ -377,10 +377,10 @@ class IVTransApp:
         lines[19 + vg_num] = f"[vgs,Ig(vds={vdd}),vbs=0.00000,ref_vs=0.00000]"
 
         for i in range(vg_num + 1):
-            row_idx = 34 + i
-            v1 = self.get_cell_val(ws_ibig, row_idx, 1)
-            v5 = self.get_cell_val(ws_ibig, row_idx, 5)
-            v3 = self.get_cell_val(ws_ibig, row_idx, 3)
+            row_idx = 33 + i
+            v1 = self.get_val(df_ibig, row_idx, 0)
+            v5 = self.get_val(df_ibig, row_idx, 4)
+            v3 = self.get_val(df_ibig, row_idx, 2)
             lines[17 + i] = f"{v1},{v5}"
             lines[20 + vg_num + i] = f"{v1},{v3}"
 
