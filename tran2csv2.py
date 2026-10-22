@@ -68,12 +68,11 @@ class IVTransApp:
             self.log("-" * 50)
 
     def get_val(self, df, row_idx, col_idx):
-        """從 DataFrame 安全取得指定位置的值並轉為一般數值字串"""
+        """從 DataFrame 安全取得指定位置的值，維持原本讀到的格式 (row_idx 與 col_idx 從 0 開始算)"""
         if row_idx < len(df) and col_idx < len(df.columns):
             val = df.iat[row_idx, col_idx]
             if pd.isna(val):
                 return ""
-            # 若為一般數值或帶有小數，直接以字串形式呈現
             return str(val).strip()
         return ""
 
@@ -107,7 +106,7 @@ class IVTransApp:
                 source_file = os.path.basename(file_path)
                 self.log(f"正在處理檔案: {source_file}")
 
-                # 使用預設 pandas 讀取（自動處理一般數值）
+                # 使用 pandas 快速讀取所有分頁，維持原本讀取的格式
                 xls = pd.ExcelFile(file_path)
                 sheet_lower_map = {s.lower(): s for s in xls.sheet_names}
 
@@ -161,6 +160,7 @@ class IVTransApp:
             messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
     def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
+        # 索引對應：Excel row 9 -> index 8, col 2 -> index 1
         w = self.get_val(df_fitting, 8, 1)
         l_val = self.get_val(df_fitting, 9, 1)
         t_val = self.get_val(df_fitting, 7, 1)
@@ -183,6 +183,7 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
+        # 對應 VBA: G1 = Cells(15,2).End(xlDown).Row -> num = G1 - 15 (index 14 為 Excel 第 15 列)
         g1 = 14
         while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iat[g1 + 1, 1]) and str(df_idvg.iat[g1 + 1, 1]).strip() != "":
             g1 += 1
