@@ -68,11 +68,12 @@ class IVTransApp:
             self.log("-" * 50)
 
     def get_val(self, df, row_idx, col_idx):
-        """從 DataFrame 安全取得指定位置的值（row_idx 與 col_idx 從 0 開始算）"""
+        """從 DataFrame 安全取得指定位置的值並轉為一般數值字串"""
         if row_idx < len(df) and col_idx < len(df.columns):
             val = df.iat[row_idx, col_idx]
             if pd.isna(val):
                 return ""
+            # 若為一般數值或帶有小數，直接以字串形式呈現
             return str(val).strip()
         return ""
 
@@ -106,7 +107,7 @@ class IVTransApp:
                 source_file = os.path.basename(file_path)
                 self.log(f"正在處理檔案: {source_file}")
 
-                # 使用 pandas 快速讀取所有分頁，並強制指定 dtype=str 保留原始字態與科學記號
+                # 使用預設 pandas 讀取（自動處理一般數值）
                 xls = pd.ExcelFile(file_path)
                 sheet_lower_map = {s.lower(): s for s in xls.sheet_names}
 
@@ -119,10 +120,10 @@ class IVTransApp:
                     else:
                         raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
 
-                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None, dtype=str)
-                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None, dtype=str)
-                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None, dtype=str)
-                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None, dtype=str)
+                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None)
+                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None)
+                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None)
+                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None)
 
                 sp1 = source_file.split("_")
                 if len(sp1) >= 2:
@@ -147,8 +148,8 @@ class IVTransApp:
                 con1_lower_map = {s.lower(): s for s in xls_con1.sheet_names}
                 
                 if "ibig_vg" in con1_lower_map and "model team fitting data" in con1_lower_map:
-                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None, dtype=str)
-                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None, dtype=str)
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None)
+                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None)
                     lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
                     self.trans_results["isub_igate"] = lines_isub
 
@@ -160,7 +161,6 @@ class IVTransApp:
             messagebox.showerror("錯誤", f"轉檔失敗:\n{str(e)}")
 
     def hci_IV_t0(self, df_fitting, df_idvg, df_idvd):
-        # 索引對應：Excel row 9 -> index 8, col 2 -> index 1
         w = self.get_val(df_fitting, 8, 1)
         l_val = self.get_val(df_fitting, 9, 1)
         t_val = self.get_val(df_fitting, 7, 1)
@@ -183,7 +183,6 @@ class IVTransApp:
         d = f"[vgs,Id(vbs=0.00000),vds={vdd},ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr={vbstr},Time={time_str}]"
         e = f"[vds,Id(vgs={vdd}),vbs=0.00000,ref_vs=0.00000,Vdstr={vdstr},Vgstr={vgstr},Vsstr=0,Vbstr=0,Time={time_str}]"
 
-        # 對應 VBA: G1 = Cells(15,2).End(xlDown).Row -> num = G1 - 15 (index 14 為 Excel 第 15 列)
         g1 = 14
         while g1 + 1 < len(df_idvg) and pd.notna(df_idvg.iat[g1 + 1, 1]) and str(df_idvg.iat[g1 + 1, 1]).strip() != "":
             g1 += 1
