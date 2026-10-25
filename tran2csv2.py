@@ -68,10 +68,10 @@ class IVTransApp:
             self.log("-" * 50)
 
     def get_val(self, df, row_idx, col_idx):
-        """從 DataFrame 安全取得指定位置的值，不經任何處理，直接保留原始格式與位數"""
+        """從 DataFrame 安全取得指定位置的值，直接轉為字串並去除前後空白"""
         if row_idx < len(df) and col_idx < len(df.columns):
             val = df.iat[row_idx, col_idx]
-            if pd.isna(val):
+            if pd.isna(val) or str(val).strip().lower() == "nan":
                 return ""
             return str(val).strip()
         return ""
@@ -118,10 +118,11 @@ class IVTransApp:
                     else:
                         raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
 
-                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None)
-                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None)
-                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None)
-                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None)
+                # 關鍵修改：加入 dtype=str，強制所有儲存格以純字串讀入，絕不截斷位數與改變格式
+                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None, dtype=str)
+                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None, dtype=str)
+                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None, dtype=str)
+                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None, dtype=str)
 
                 sp1 = source_file.split("_")
                 if len(sp1) >= 2:
@@ -146,8 +147,8 @@ class IVTransApp:
                 con1_lower_map = {s.lower(): s for s in xls_con1.sheet_names}
                 
                 if "ibig_vg" in con1_lower_map and "model team fitting data" in con1_lower_map:
-                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None)
-                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None)
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None, dtype=str)
+                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None, dtype=str)
                     lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
                     self.trans_results["isub_igate"] = lines_isub
 
