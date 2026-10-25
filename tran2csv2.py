@@ -1,6 +1,7 @@
 import os
 import glob
 import pandas as pd
+from decimal import Decimal
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
@@ -68,12 +69,21 @@ class IVTransApp:
             self.log("-" * 50)
 
     def get_val(self, df, row_idx, col_idx):
-        """從 DataFrame 安全取得指定位置的值，直接轉為字串並去除前後空白"""
+        """從 DataFrame 安全取得值，若遇到 Excel 底層的科學記號 (帶 e)，自動展開為一般數字字串，不截斷位數"""
         if row_idx < len(df) and col_idx < len(df.columns):
             val = df.iat[row_idx, col_idx]
             if pd.isna(val) or str(val).strip().lower() == "nan":
                 return ""
-            return str(val).strip()
+            val_str = str(val).strip()
+            
+            # 如果 Excel 底層以科學記號 ('e' 或 'E') 儲存，使用高精度 Decimal 將其完整展開為一般數字
+            if 'e' in val_str.lower():
+                try:
+                    d = Decimal(val_str)
+                    return format(d, 'f')
+                except:
+                    return val_str
+            return val_str
         return ""
 
     def run_hci_trans(self):
@@ -118,7 +128,6 @@ class IVTransApp:
                     else:
                         raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
 
-                # 關鍵修改：加入 dtype=str，強制所有儲存格以純字串讀入，絕不截斷位數與改變格式
                 df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None, dtype=str)
                 df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None, dtype=str)
                 df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None, dtype=str)
