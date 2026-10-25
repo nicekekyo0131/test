@@ -1,7 +1,6 @@
 import os
 import glob
 import pandas as pd
-from decimal import Decimal
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
@@ -69,20 +68,36 @@ class IVTransApp:
             self.log("-" * 50)
 
     def get_val(self, df, row_idx, col_idx):
-        """從 DataFrame 安全取得值，若遇到 Excel 底層的科學記號 (帶 e)，自動展開為一般數字字串，不截斷位數"""
+        """從 DataFrame 取得值，並強制將任何數字或科學記號展開為一般小數點字串，不截斷位數"""
         if row_idx < len(df) and col_idx < len(df.columns):
             val = df.iat[row_idx, col_idx]
-            if pd.isna(val) or str(val).strip().lower() == "nan":
+            if pd.isna(val):
                 return ""
-            val_str = str(val).strip()
             
-            # 如果 Excel 底層以科學記號 ('e' 或 'E') 儲存，使用高精度 Decimal 將其完整展開為一般數字
+            # 如果本身就是數字或浮點數，強制以固定小數點格式 ('f') 展開，去除科學記號
+            if isinstance(val, (int, float)):
+                try:
+                    # 使用 'f' 格式化可以把科學記號（如 1.23e-05）完整展開為一般小數
+                    s = format(val, 'f')
+                    # 去除後面多餘的 0（如果需要保留精確小數可拿掉這行，但通常半導體資料這樣最乾淨）
+                    if '.' in s:
+                        s = s.rstrip('0').rstrip('.')
+                    return s
+                except:
+                    return str(val).strip()
+            
+            val_str = str(val).strip()
+            # 萬一字串本身帶有 e 或 E，嘗試轉成 float 再用 'f' 展開
             if 'e' in val_str.lower():
                 try:
-                    d = Decimal(val_str)
-                    return format(d, 'f')
+                    f_val = float(val_str)
+                    s = format(f_val, 'f')
+                    if '.' in s:
+                        s = s.rstrip('0').rstrip('.')
+                    return s
                 except:
                     return val_str
+
             return val_str
         return ""
 
@@ -128,10 +143,11 @@ class IVTransApp:
                     else:
                         raise ValueError(f"檔案 {source_file} 缺少必要的工作表: {req}")
 
-                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None, dtype=str)
-                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None, dtype=str)
-                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None, dtype=str)
-                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None, dtype=str)
+                # 不加 dtype=str，讓 pandas 讀出原始的數值型態交由 get_val 進行完整展開
+                df_fitting = pd.read_excel(file_path, sheet_name=real_sheets["Model team Fitting data"], header=None)
+                df_idvg = pd.read_excel(file_path, sheet_name=real_sheets["IdVg_raw"], header=None)
+                df_idvd = pd.read_excel(file_path, sheet_name=real_sheets["IdVd_raw"], header=None)
+                df_param = pd.read_excel(file_path, sheet_name=real_sheets["Parameter"], header=None)
 
                 sp1 = source_file.split("_")
                 if len(sp1) >= 2:
@@ -156,8 +172,8 @@ class IVTransApp:
                 con1_lower_map = {s.lower(): s for s in xls_con1.sheet_names}
                 
                 if "ibig_vg" in con1_lower_map and "model team fitting data" in con1_lower_map:
-                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None, dtype=str)
-                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None, dtype=str)
+                    df_fitting_c1 = pd.read_excel(con1_file, sheet_name=con1_lower_map["model team fitting data"], header=None)
+                    df_ibig = pd.read_excel(con1_file, sheet_name=con1_lower_map["ibig_vg"], header=None)
                     lines_isub = self.isub_igate_iv(df_fitting_c1, df_ibig)
                     self.trans_results["isub_igate"] = lines_isub
 
@@ -268,7 +284,10 @@ class IVTransApp:
         
         try:
             raw_time = float(df_param.iat[g3, 0])
-            time_str = str(raw_time / 60)
+            time_val = raw_time / 60
+            time_str = format(time_val, 'f')
+            if '.' in time_str:
+                time_str = time_str.rstrip('0').rstrip('.')
         except:
             time_str = self.get_val(df_param, g3, 0)
 
