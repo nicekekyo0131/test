@@ -68,26 +68,12 @@ class IVTransApp:
             self.log("-" * 50)
 
     def get_val(self, df, row_idx, col_idx):
-        """從 DataFrame 安全取得指定位置的值，強制以一般數字展開，避免 Python 自動轉成科學記號 e"""
+        """從 DataFrame 安全取得指定位置的值，不經任何處理，直接保留原始格式與位數"""
         if row_idx < len(df) and col_idx < len(df.columns):
             val = df.iat[row_idx, col_idx]
             if pd.isna(val):
                 return ""
-            
-            # 如果是數值型態，強制展開為一般小數點表示法
-            try:
-                f_val = float(val)
-                # 如果是整數或剛好是整數的浮點數
-                if f_val.is_integer():
-                    return str(int(f_val))
-                else:
-                    # 使用 :f 格式化強制完整展開，並去除尾隨多餘的 0
-                    s = f"{f_val:f}"
-                    if '.' in s:
-                        s = s.rstrip('0').rstrip('.')
-                    return s
-            except (ValueError, TypeError):
-                return str(val).strip()
+            return str(val).strip()
         return ""
 
     def run_hci_trans(self):
@@ -272,13 +258,7 @@ class IVTransApp:
         
         try:
             raw_time = float(df_param.iat[g3, 0])
-            # 確保時間計算也不會變科學記號
-            time_val = raw_time / 60
-            if time_val.is_integer():
-                time_str = str(int(time_val))
-            else:
-                s = f"{time_val:f}"
-                time_str = s.rstrip('0').rstrip('.') if '.' in s else s
+            time_str = str(raw_time / 60)
         except:
             time_str = self.get_val(df_param, g3, 0)
 
